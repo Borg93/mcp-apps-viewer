@@ -2,6 +2,8 @@
 import { onMount, onDestroy } from "svelte";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { TextLine, ViewerData, PageData, PageAltoData, TooltipState } from "../lib/types";
+import type { PolygonHit } from "../lib/geometry";
+import { buildPolygonHits, findHitAtImageCoord, screenToImage } from "../lib/geometry";
 import { parsePageResult } from "../lib/utils";
 
 interface Props {
@@ -14,13 +16,21 @@ interface Props {
 let { app, data, currentPageIndex, onPageChange }: Props = $props();
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const MIN_SCALE = 0.1;
+const MAX_SCALE = 10;
+const ZOOM_SPEED = 0.003;
+const ZOOM_LERP = 0.25;
+const PAN_FRICTION = 0.92;
+
+// ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
 let tooltip = $state<TooltipState | null>(null);
 let highlightedLineId = $state<string | null>(null);
-let status = $state("");
-let loading = $state(false);
 
 let totalPages = $derived(data.pageUrls.length);
 
@@ -38,7 +48,7 @@ let transform = { x: 0, y: 0, scale: 1 };
 let currentAlto: PageAltoData | null = null;
 
 // Parsed polygon data for hit testing (image coordinates)
-let currentPolygons: { lineId: string; points: number[]; line: TextLine }[] = [];
+let currentPolygons: PolygonHit[] = [];
 
 // Pointer state for pan + click detection
 let pointerDown: { x: number; y: number; tx: number; ty: number } | null = null;
@@ -59,48 +69,6 @@ let rafId = 0;
 // Visibility-aware rendering (pause when off-screen)
 let isVisible = true;
 let pendingDraw = false;
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Parse ALTO polygon "x1,y1 x2,y2 ..." into flat [x1,y1,x2,y2,...] */
-function parsePolygonPoints(polygon: string): number[] {
-  const pts: number[] = [];
-  for (const pair of polygon.trim().split(/\s+/)) {
-    const [x, y] = pair.split(",").map(Number);
-    if (!isNaN(x) && !isNaN(y)) pts.push(x, y);
-  }
-  return pts;
-}
-
-/** Ray-casting point-in-polygon test */
-function pointInPolygon(px: number, py: number, pts: number[]): boolean {
-  let inside = false;
-  for (let i = 0, j = pts.length - 2; i < pts.length; j = i, i += 2) {
-    const xi = pts[i], yi = pts[i + 1];
-    const xj = pts[j], yj = pts[j + 1];
-    if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) {
-      inside = !inside;
-    }
-  }
-  return inside;
-}
-
-function findLineAtImageCoord(imgX: number, imgY: number) {
-  for (const p of currentPolygons) {
-    if (pointInPolygon(imgX, imgY, p.points)) return p;
-  }
-  return null;
-}
-
-/** Convert screen (canvas-relative) coords to image pixel coords */
-function screenToImage(sx: number, sy: number): { x: number; y: number } {
-  return {
-    x: (sx - transform.x) / transform.scale,
-    y: (sy - transform.y) / transform.scale,
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Drawing
@@ -224,8 +192,8 @@ function handlePointerMove(e: PointerEvent) {
     return;
   }
 
-  const img = screenToImage(cx, cy);
-  const hit = findLineAtImageCoord(img.x, img.y);
+  const img = screenToImage(cx, cy, transform);
+  const hit = findHitAtImageCoord(img.x, img.y, currentPolygons);
   if (hit) {
     tooltip = { text: hit.line.transcription, x: e.clientX + 15, y: e.clientY + 15 };
     if (highlightedLineId !== hit.lineId) {
@@ -262,21 +230,18 @@ function handlePointerUp(e: PointerEvent) {
   const rect = canvasEl.getBoundingClientRect();
   const cx = e.clientX - rect.left;
   const cy = e.clientY - rect.top;
-  const img = screenToImage(cx, cy);
-  const hit = findLineAtImageCoord(img.x, img.y);
+  const img = screenToImage(cx, cy, transform);
+  const hit = findHitAtImageCoord(img.x, img.y, currentPolygons);
   if (hit) sendLineText(hit.line);
 }
 
 function applyPanInertia() {
-  const FRICTION = 0.92; // Deceleration per frame
-  const MIN_SPEED = 0.3; // Stop threshold (px/frame)
-
   function step() {
-    panVelocity.vx *= FRICTION;
-    panVelocity.vy *= FRICTION;
+    panVelocity.vx *= PAN_FRICTION;
+    panVelocity.vy *= PAN_FRICTION;
 
     const speed = Math.sqrt(panVelocity.vx ** 2 + panVelocity.vy ** 2);
-    if (speed < MIN_SPEED / 16) { // velocity is in px/ms, scale threshold
+    if (speed < 0.02) { // px/ms — stop when negligible
       panInertiaId = 0;
       return;
     }
@@ -316,7 +281,7 @@ function handleWheel(e: WheelEvent) {
   const ZOOM_SPEED = 0.003;
   const factor = Math.exp(delta * ZOOM_SPEED);
 
-  targetScale = Math.max(0.1, Math.min(10, targetScale * factor));
+  targetScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, targetScale * factor));
 
   if (!zoomAnimating) {
     zoomAnimating = true;
@@ -336,15 +301,14 @@ function animateZoom() {
     return;
   }
 
-  // Ease toward target (lerp factor 0.25 = smooth but responsive)
-  const newScale = transform.scale + diff * 0.25;
+  const newScale = transform.scale + diff * ZOOM_LERP;
   applyZoom(newScale);
 
   requestAnimationFrame(animateZoom);
 }
 
 function applyZoom(newScale: number) {
-  const clamped = Math.max(0.1, Math.min(10, newScale));
+  const clamped = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
   const ratio = clamped / transform.scale;
   transform.x = zoomCenterX - (zoomCenterX - transform.x) * ratio;
   transform.y = zoomCenterY - (zoomCenterY - transform.y) * ratio;
@@ -359,31 +323,18 @@ function applyZoom(newScale: number) {
 /** Render a PageData that's already available */
 function renderPage(page: PageData) {
   currentAlto = page.alto;
-  currentPolygons = [];
+  currentPolygons = currentAlto?.textLines ? buildPolygonHits(currentAlto.textLines) : [];
   highlightedLineId = null;
   tooltip = null;
-
-  if (currentAlto?.textLines) {
-    for (const line of currentAlto.textLines) {
-      const points = parsePolygonPoints(line.polygon);
-      if (points.length >= 6) {
-        currentPolygons.push({ lineId: line.id, points, line });
-      }
-    }
-  }
 
   const img = new Image();
   img.onload = () => {
     image = img;
     fitToCanvas();
     draw();
-    status = currentPolygons.length > 0
-      ? `Page ${currentPageIndex + 1} / ${totalPages} — ${currentPolygons.length} text lines`
-      : `Page ${currentPageIndex + 1} / ${totalPages}`;
     updatePageContext();
   };
   img.onerror = () => {
-    status = "Failed to load image";
     image = null;
     draw();
   };
@@ -435,18 +386,11 @@ async function fetchAndRenderPage(index: number) {
     return;
   }
 
-  // Fetch ALTO from server (image loads directly in browser via URL)
-  loading = true;
-  status = `Loading page ${index + 1}...`;
-
   const page = await fetchPageData(index);
   if (page && currentPageIndex === index) {
     renderPage(page);
     prefetchAdjacentPages(index);
-  } else if (!page) {
-    status = `Failed to load page ${index + 1}`;
   }
-  loading = false;
 }
 
 /** Prefetch ALTO data for adjacent pages so navigation feels instant */
@@ -490,18 +434,13 @@ async function updatePageContext() {
 }
 
 async function sendLineText(line: TextLine) {
-  status = "Sending selected text...";
   try {
     await app.sendMessage({
       role: "user",
       content: [{ type: "text", text: `Selected text from page ${currentPageIndex + 1}/${totalPages}:\n"${line.transcription}"` }],
     });
-    status = "Text sent";
   } catch (e) {
-    console.error(e);
-    status = "Failed to send text";
-  } finally {
-    setTimeout(() => (status = ""), 2000);
+    console.error("sendLineText failed:", e);
   }
 }
 
@@ -558,13 +497,6 @@ onDestroy(() => {
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="viewer-wrapper" bind:this={wrapperEl}>
-  <!-- Status bar -->
-  {#if status}
-    <div class="status-bar">
-      <span class="status-text">{status}</span>
-    </div>
-  {/if}
-
   <!-- Canvas -->
   <div class="canvas-container" bind:this={containerEl}>
     <canvas
@@ -590,19 +522,10 @@ onDestroy(() => {
 .viewer-wrapper {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-}
-
-.status-bar {
-  padding: var(--spacing-xs, 0.25rem) var(--spacing-sm, 0.5rem);
-  background: var(--color-background-secondary, #f5f5f5);
-  border-bottom: 1px solid var(--color-border-primary);
-}
-.status-text {
-  font-size: var(--font-text-sm-size, 0.875rem);
-  color: var(--color-text-secondary);
 }
 
 .canvas-container {

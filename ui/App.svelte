@@ -159,7 +159,7 @@ onMount(async () => {
 <style>
 .main {
   width: 100%;
-  min-height: 100%;
+  height: 100%;
   padding: var(--spacing-sm, 0.5rem);
   display: flex;
   flex-direction: column;
@@ -178,6 +178,8 @@ onMount(async () => {
   display: flex;
   flex: 1;
   min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
   gap: 0;
 }
 
