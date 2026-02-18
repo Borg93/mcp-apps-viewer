@@ -1,5 +1,5 @@
 /**
- * Type definitions for the Riksarkivet Document Viewer
+ * Type definitions for the Document Viewer
  */
 
 export interface TextLine {
@@ -18,19 +18,21 @@ export interface PageAltoData {
   pageHeight: number;
 }
 
-export interface ImageChunk {
-  bytes: string;
-  offset: number;
-  byteCount: number;
-  totalBytes: number;
-  hasMore: boolean;
+export interface PageData {
+  index: number;
+  imageDataUrl: string;
+  alto: PageAltoData;
 }
 
+export interface PageUrl {
+  image: string;
+  alto: string;
+}
+
+/** Initial payload from view-document tool */
 export interface ViewerData {
-  imageUrls: string[];
-  altoUrls: string[];
-  error?: boolean;
-  message?: string;
+  pageUrls: PageUrl[];
+  firstPage: PageData;
 }
 
 export interface TooltipState {

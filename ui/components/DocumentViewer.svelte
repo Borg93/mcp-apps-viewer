@@ -1,10 +1,8 @@
 <script lang="ts">
 import { onMount, onDestroy } from "svelte";
-import OpenSeadragon from "openseadragon";
-import Konva from "konva";
-
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { TextLine, TooltipState, ViewerData, PageAltoData, ImageChunk } from "../lib/types";
+import type { TextLine, ViewerData, PageData, PageAltoData, TooltipState } from "../lib/types";
+import { parsePageResult } from "../lib/utils";
 
 interface Props {
   app: App;
@@ -14,135 +12,49 @@ interface Props {
 
 let { app, data, displayMode = "inline" }: Props = $props();
 
-const CHUNK_SIZE = 512 * 1024;
-
+// ---------------------------------------------------------------------------
 // State
+// ---------------------------------------------------------------------------
+
 let overlaysVisible = $state(true);
 let currentPageIndex = $state(0);
 let tooltip = $state<TooltipState | null>(null);
 let highlightedLineId = $state<string | null>(null);
 let status = $state("");
-let pageStatus = $state("");
-let osdContainer: HTMLDivElement;
+let loading = $state(false);
+let isFullscreen = $state(false);
 
-// Derived
-let totalPages = $derived(data.imageUrls.length);
+let totalPages = $derived(data.pageUrls.length);
+let effectiveFullscreen = $derived(isFullscreen || displayMode === "fullscreen");
 
-// Current page data (loaded on demand via callServerTool)
-let currentAlto = $state<PageAltoData | null>(null);
+// Client-side page cache — each page fetched at most once
+let pageCache = new Map<number, PageData>();
 
-// OSD + Konva instances
-let viewer: OpenSeadragon.Viewer | null = null;
-let stage: Konva.Stage | null = null;
-let layer: Konva.Layer | null = null;
-let konvaDiv: HTMLDivElement | null = null;
+// Canvas + transform
+let canvasEl: HTMLCanvasElement;
+let containerEl: HTMLDivElement;
+let wrapperEl: HTMLDivElement;
+let image: HTMLImageElement | null = null;
+let transform = { x: 0, y: 0, scale: 1 };
 
-// Shape lookup for highlight updates
-let shapeMap = new Map<string, Konva.Line>();
+// Current page ALTO data
+let currentAlto: PageAltoData | null = null;
 
 // Parsed polygon data for hit testing (image coordinates)
 let currentPolygons: { lineId: string; points: number[]; line: TextLine }[] = [];
 
-// Drag detection
-let mouseDownPos: { x: number; y: number } | null = null;
+// Pointer state for pan + click detection
+let pointerDown: { x: number; y: number; tx: number; ty: number } | null = null;
+let dragged = false;
 
-// rAF-throttled sync flag
-let syncRequested = false;
-
-// Cleanup handles
-let resizeObserver: ResizeObserver | null = null;
-let blobUrls: string[] = [];
-
-// ---------------------------------------------------------------------------
-// Data Loading — server fetches everything, app receives data
-// ---------------------------------------------------------------------------
-
-/**
- * Load image bytes from the server in chunks (like PDF server's read_pdf_bytes).
- * Returns a local blob URL that OSD can render directly.
- */
-async function loadImageBytes(imageUrl: string): Promise<string> {
-  const chunks: Uint8Array[] = [];
-  let offset = 0;
-  let hasMore = true;
-  let totalBytes = 0;
-
-  pageStatus = "Loading image...";
-
-  while (hasMore) {
-    const result = await app.callServerTool({
-      name: "read-image-bytes",
-      arguments: { url: imageUrl, offset, byte_count: CHUNK_SIZE },
-    });
-
-    if (result.isError) {
-      const msg = result.content?.map((c: any) => ("text" in c ? c.text : "")).join(" ");
-      throw new Error(msg || "Failed to load image");
-    }
-
-    const sc = (result as any).structuredContent as ImageChunk | undefined;
-    if (!sc) throw new Error("No structuredContent in image response");
-
-    totalBytes = sc.totalBytes;
-    hasMore = sc.hasMore;
-
-    // Decode base64 chunk
-    const binaryString = atob(sc.bytes);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    chunks.push(bytes);
-
-    offset += sc.byteCount;
-    const pct = Math.round((offset / totalBytes) * 100);
-    pageStatus = `Loading image... ${pct}%`;
-  }
-
-  // Assemble chunks into a blob URL
-  const fullData = new Uint8Array(totalBytes);
-  let pos = 0;
-  for (const chunk of chunks) {
-    fullData.set(chunk, pos);
-    pos += chunk.length;
-  }
-
-  const blob = new Blob([fullData], { type: "image/jpeg" });
-  const blobUrl = URL.createObjectURL(blob);
-  blobUrls.push(blobUrl);
-  console.log(`[Image] Loaded ${totalBytes} bytes in ${chunks.length} chunk(s)`);
-  return blobUrl;
-}
-
-/**
- * Load and parse ALTO XML via the server (like PDF server's chunked loading).
- * Server fetches the XML, parses it, returns structured text line data.
- */
-async function loadAlto(altoUrl: string): Promise<PageAltoData> {
-  pageStatus = "Loading text overlay...";
-
-  const result = await app.callServerTool({
-    name: "read-alto",
-    arguments: { url: altoUrl },
-  });
-
-  if (result.isError) {
-    const msg = result.content?.map((c: any) => ("text" in c ? c.text : "")).join(" ");
-    throw new Error(msg || "Failed to load ALTO");
-  }
-
-  const sc = (result as any).structuredContent as PageAltoData | undefined;
-  if (!sc) throw new Error("No structuredContent in ALTO response");
-
-  console.log(`[ALTO] ${sc.textLines.length} text lines, ${sc.pageWidth}x${sc.pageHeight}`);
-  return sc;
-}
+// Animation frame handle
+let rafId = 0;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Parse ALTO polygon "x1,y1 x2,y2 ..." → flat [x1,y1,x2,y2,...] */
+/** Parse ALTO polygon "x1,y1 x2,y2 ..." into flat [x1,y1,x2,y2,...] */
 function parsePolygonPoints(polygon: string): number[] {
   const pts: number[] = [];
   for (const pair of polygon.trim().split(/\s+/)) {
@@ -152,7 +64,7 @@ function parsePolygonPoints(polygon: string): number[] {
   return pts;
 }
 
-/** Ray-casting point-in-polygon */
+/** Ray-casting point-in-polygon test */
 function pointInPolygon(px: number, py: number, pts: number[]): boolean {
   let inside = false;
   for (let i = 0, j = pts.length - 2; i < pts.length; j = i, i += 2) {
@@ -172,222 +84,314 @@ function findLineAtImageCoord(imgX: number, imgY: number) {
   return null;
 }
 
-/** Convert client (mouse) coords → image pixel coords via OSD viewport */
-function clientToImageCoord(clientX: number, clientY: number): OpenSeadragon.Point | null {
-  if (!viewer) return null;
-  const rect = viewer.container.getBoundingClientRect();
-  const vp = new OpenSeadragon.Point(clientX - rect.left, clientY - rect.top);
-  return viewer.viewport.viewerElementToImageCoordinates(vp);
+/** Convert screen (canvas-relative) coords to image pixel coords */
+function screenToImage(sx: number, sy: number): { x: number; y: number } {
+  return {
+    x: (sx - transform.x) / transform.scale,
+    y: (sy - transform.y) / transform.scale,
+  };
 }
 
 // ---------------------------------------------------------------------------
-// Konva ↔ OSD sync
+// Drawing
 // ---------------------------------------------------------------------------
 
-function requestSync() {
-  if (!syncRequested) {
-    syncRequested = true;
-    requestAnimationFrame(() => {
-      syncKonva();
-      syncRequested = false;
-    });
-  }
-}
+function draw() {
+  if (!canvasEl || !image) return;
+  const ctx = canvasEl.getContext("2d");
+  if (!ctx) return;
 
-function syncKonva() {
-  if (!viewer || !stage || !layer || !viewer.viewport || !viewer.isOpen()) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvasEl.clientWidth;
+  const h = canvasEl.clientHeight;
 
-  const cw = viewer.container.clientWidth;
-  const ch = viewer.container.clientHeight;
-  stage.width(cw);
-  stage.height(ch);
-
-  const tiledImage = viewer.world.getItemAt(0);
-  if (!tiledImage) return;
-
-  const bounds = viewer.viewport.getBounds();
-  const zoom = viewer.viewport.getZoom();
-  const imageSize = tiledImage.getContentSize();
-
-  // image-pixel → screen-pixel scale
-  const scale = (1 / imageSize.x) * (cw * zoom);
-
-  // offset: where image origin (0,0) maps to in screen pixels
-  const offsetX = -bounds.x * (cw * zoom);
-  const offsetY = -bounds.y * (cw * zoom);
-
-  stage.scale({ x: scale, y: scale });
-  stage.position({ x: offsetX, y: offsetY });
-  layer.draw();
-}
-
-// ---------------------------------------------------------------------------
-// Overlay management
-// ---------------------------------------------------------------------------
-
-function createKonvaOverlay(alto: PageAltoData) {
-  if (!layer) return;
-
-  console.log(`[Konva] Creating overlay: ${alto.textLines.length} text lines`);
-
-  layer.destroyChildren();
-  shapeMap.clear();
-  currentPolygons = [];
-
-  for (const line of alto.textLines) {
-    const points = parsePolygonPoints(line.polygon);
-    if (points.length < 6) continue;
-
-    currentPolygons.push({ lineId: line.id, points, line });
-
-    const shape = new Konva.Line({
-      points,
-      closed: true,
-      fill: "rgba(193, 95, 60, 0.15)",
-      stroke: "rgba(193, 95, 60, 0.7)",
-      strokeWidth: 2,
-      listening: false,
-    });
-    shapeMap.set(line.id, shape);
-    layer.add(shape);
+  if (canvasEl.width !== w * dpr || canvasEl.height !== h * dpr) {
+    canvasEl.width = w * dpr;
+    canvasEl.height = h * dpr;
   }
 
-  updateOverlayVisibility();
-  syncKonva();
-}
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
 
-function updateOverlayVisibility() {
-  if (layer) {
-    layer.visible(overlaysVisible);
-    layer.draw();
-  }
-}
+  ctx.save();
+  ctx.translate(transform.x, transform.y);
+  ctx.scale(transform.scale, transform.scale);
 
-function highlightShape(lineId: string | null) {
-  if (!layer) return;
+  ctx.drawImage(image, 0, 0);
 
-  if (highlightedLineId) {
-    const prev = shapeMap.get(highlightedLineId);
-    if (prev) {
-      prev.fill("rgba(193, 95, 60, 0.15)");
-      prev.stroke("rgba(193, 95, 60, 0.7)");
-      prev.strokeWidth(2);
-    }
-  }
-
-  if (lineId) {
-    const s = shapeMap.get(lineId);
-    if (s) {
-      s.fill("rgba(193, 95, 60, 0.3)");
-      s.stroke("rgba(193, 95, 60, 1)");
-      s.strokeWidth(3);
-    }
-  }
-
-  highlightedLineId = lineId;
-  layer.batchDraw();
-}
-
-// ---------------------------------------------------------------------------
-// Page loading
-// ---------------------------------------------------------------------------
-
-async function loadPage(pageIndex: number) {
-  if (!viewer) return;
-
-  currentAlto = null;
-  currentPolygons = [];
-  if (layer) {
-    layer.destroyChildren();
-    shapeMap.clear();
-    layer.draw();
-  }
-
-  try {
-    // 1. Load image bytes from server → blob URL
-    const blobUrl = await loadImageBytes(data.imageUrls[pageIndex]);
-
-    // 2. Open blob URL in OSD (no network requests — local data)
-    viewer.open({ type: "image", url: blobUrl, buildPyramid: false } as any);
-
-    // 3. After OSD opens, load ALTO from server
-    const onOpen = async () => {
-      viewer?.removeHandler("open", onOpen);
-      try {
-        const alto = await loadAlto(data.altoUrls[pageIndex]);
-        currentAlto = alto;
-        createKonvaOverlay(alto);
-        pageStatus = `${alto.textLines.length} text lines`;
-        setTimeout(() => (pageStatus = ""), 3000);
-      } catch (e) {
-        console.error("[ALTO] Failed:", e);
-        currentAlto = { textLines: [], pageWidth: 0, pageHeight: 0 };
-        pageStatus = "Text overlay unavailable";
+  if (overlaysVisible && currentPolygons.length > 0) {
+    for (const p of currentPolygons) {
+      const isHighlighted = p.lineId === highlightedLineId;
+      ctx.beginPath();
+      ctx.moveTo(p.points[0], p.points[1]);
+      for (let i = 2; i < p.points.length; i += 2) {
+        ctx.lineTo(p.points[i], p.points[i + 1]);
       }
-    };
-    viewer.addHandler("open", onOpen);
-  } catch (e) {
-    console.error("[loadPage] Failed:", e);
-    pageStatus = `Error: ${e instanceof Error ? e.message : String(e)}`;
+      ctx.closePath();
+
+      ctx.fillStyle = isHighlighted ? "rgba(193, 95, 60, 0.3)" : "rgba(193, 95, 60, 0.15)";
+      ctx.fill();
+      ctx.strokeStyle = isHighlighted ? "rgba(193, 95, 60, 1)" : "rgba(193, 95, 60, 0.7)";
+      ctx.lineWidth = isHighlighted ? 3 / transform.scale : 2 / transform.scale;
+      ctx.stroke();
+    }
+  }
+
+  ctx.restore();
+}
+
+function requestDraw() {
+  if (!rafId) {
+    rafId = requestAnimationFrame(() => {
+      rafId = 0;
+      draw();
+    });
   }
 }
 
-function goToPage(index: number) {
-  if (index < 0 || index >= totalPages) return;
-  currentPageIndex = index;
-  loadPage(index);
-}
-
-function toggleOverlays() {
-  overlaysVisible = !overlaysVisible;
-  updateOverlayVisibility();
+function fitToCanvas() {
+  if (!image || !canvasEl) return;
+  const cw = canvasEl.clientWidth;
+  const ch = canvasEl.clientHeight;
+  const padding = 16;
+  const scaleX = (cw - padding * 2) / image.naturalWidth;
+  const scaleY = (ch - padding * 2) / image.naturalHeight;
+  transform.scale = Math.min(scaleX, scaleY, 1);
+  transform.x = (cw - image.naturalWidth * transform.scale) / 2;
+  transform.y = (ch - image.naturalHeight * transform.scale) / 2;
 }
 
 // ---------------------------------------------------------------------------
-// Mouse interaction (on OSD container, Konva canvas is pointer-events:none)
+// Pointer interaction (pan + click + hover)
 // ---------------------------------------------------------------------------
 
-function handleMouseDown(e: MouseEvent) {
-  mouseDownPos = { x: e.clientX, y: e.clientY };
+function handlePointerDown(e: PointerEvent) {
+  if (e.button !== 0) return;
+  pointerDown = { x: e.clientX, y: e.clientY, tx: transform.x, ty: transform.y };
+  dragged = false;
+  canvasEl.setPointerCapture(e.pointerId);
 }
 
-function handleMouseMove(e: MouseEvent) {
-  if (!overlaysVisible || !currentAlto?.textLines.length) {
-    if (tooltip) { tooltip = null; highlightShape(null); }
+function handlePointerMove(e: PointerEvent) {
+  const rect = canvasEl.getBoundingClientRect();
+  const cx = e.clientX - rect.left;
+  const cy = e.clientY - rect.top;
+
+  if (pointerDown) {
+    const dx = e.clientX - pointerDown.x;
+    const dy = e.clientY - pointerDown.y;
+    if (dx * dx + dy * dy > 9) dragged = true;
+    transform.x = pointerDown.tx + dx;
+    transform.y = pointerDown.ty + dy;
+    requestDraw();
     return;
   }
-  const img = clientToImageCoord(e.clientX, e.clientY);
-  if (!img) return;
 
+  if (!overlaysVisible || !currentPolygons.length) {
+    if (tooltip) { tooltip = null; highlightedLineId = null; requestDraw(); }
+    return;
+  }
+
+  const img = screenToImage(cx, cy);
   const hit = findLineAtImageCoord(img.x, img.y);
   if (hit) {
     tooltip = { text: hit.line.transcription, x: e.clientX + 15, y: e.clientY + 15 };
-    if (highlightedLineId !== hit.lineId) highlightShape(hit.lineId);
-    if (viewer) viewer.canvas.style.cursor = "pointer";
+    if (highlightedLineId !== hit.lineId) {
+      highlightedLineId = hit.lineId;
+      requestDraw();
+    }
+    canvasEl.style.cursor = "pointer";
   } else {
-    if (tooltip) { tooltip = null; highlightShape(null); }
-    if (viewer) viewer.canvas.style.cursor = "";
+    if (tooltip) {
+      tooltip = null;
+      highlightedLineId = null;
+      requestDraw();
+    }
+    canvasEl.style.cursor = pointerDown ? "grabbing" : "grab";
   }
 }
 
-function handleClick(e: MouseEvent) {
-  if (!overlaysVisible || !currentAlto?.textLines.length) return;
-  if (mouseDownPos) {
-    const dx = e.clientX - mouseDownPos.x;
-    const dy = e.clientY - mouseDownPos.y;
-    if (dx * dx + dy * dy > 25) return; // was a drag
-  }
-  const img = clientToImageCoord(e.clientX, e.clientY);
-  if (!img) return;
+function handlePointerUp(e: PointerEvent) {
+  if (!pointerDown) return;
+  const wasDrag = dragged;
+  pointerDown = null;
+  canvasEl.releasePointerCapture(e.pointerId);
 
+  if (wasDrag) return;
+
+  if (!overlaysVisible || !currentPolygons.length) return;
+  const rect = canvasEl.getBoundingClientRect();
+  const cx = e.clientX - rect.left;
+  const cy = e.clientY - rect.top;
+  const img = screenToImage(cx, cy);
   const hit = findLineAtImageCoord(img.x, img.y);
   if (hit) sendLineText(hit.line);
 }
 
-function handleMouseLeave() {
+function handlePointerLeave() {
   tooltip = null;
-  highlightShape(null);
-  if (viewer) viewer.canvas.style.cursor = "";
+  if (highlightedLineId) {
+    highlightedLineId = null;
+    requestDraw();
+  }
+}
+
+function handleWheel(e: WheelEvent) {
+  e.preventDefault();
+  const rect = canvasEl.getBoundingClientRect();
+  const cx = e.clientX - rect.left;
+  const cy = e.clientY - rect.top;
+
+  const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+  const newScale = Math.max(0.1, Math.min(10, transform.scale * factor));
+
+  transform.x = cx - (cx - transform.x) * (newScale / transform.scale);
+  transform.y = cy - (cy - transform.y) * (newScale / transform.scale);
+  transform.scale = newScale;
+  requestDraw();
+}
+
+// ---------------------------------------------------------------------------
+// Page rendering + navigation
+// ---------------------------------------------------------------------------
+
+/** Render a PageData that's already available */
+function renderPage(page: PageData) {
+  currentAlto = page.alto;
+  currentPolygons = [];
+  highlightedLineId = null;
+  tooltip = null;
+
+  if (currentAlto?.textLines) {
+    for (const line of currentAlto.textLines) {
+      const points = parsePolygonPoints(line.polygon);
+      if (points.length >= 6) {
+        currentPolygons.push({ lineId: line.id, points, line });
+      }
+    }
+  }
+
+  const img = new Image();
+  img.onload = () => {
+    image = img;
+    fitToCanvas();
+    draw();
+    status = currentPolygons.length > 0
+      ? `${currentPolygons.length} text lines`
+      : "No text overlay";
+    setTimeout(() => (status = ""), 3000);
+    updatePageContext();
+  };
+  img.onerror = () => {
+    status = "Failed to load image";
+    image = null;
+    draw();
+  };
+  img.src = page.imageDataUrl;
+}
+
+/** Navigate to a page — use cache or fetch via callServerTool */
+async function goToPage(index: number) {
+  if (index < 0 || index >= totalPages || loading) return;
+  currentPageIndex = index;
+
+  // Check cache first — instant render, no server call
+  const cached = pageCache.get(index);
+  if (cached) {
+    renderPage(cached);
+    return;
+  }
+
+  // Fetch from server via callServerTool (same pattern as wiki-explorer)
+  loading = true;
+  status = `Loading page ${index + 1}...`;
+
+  try {
+    const urls = data.pageUrls[index];
+    const result = await app.callServerTool({
+      name: "load-page",
+      arguments: {
+        image_url: urls.image,
+        alto_url: urls.alto,
+        page_index: index,
+      },
+    });
+
+    if (result.isError) {
+      const errText = result.content?.map((c: any) => ("text" in c ? c.text : "")).join(" ") ?? "Unknown error";
+      console.error("load-page error:", errText);
+      status = `Error loading page ${index + 1}`;
+      return;
+    }
+
+    const page = parsePageResult(result);
+    if (page) {
+      pageCache.set(index, page);
+      // Only render if user hasn't navigated away during fetch
+      if (currentPageIndex === index) {
+        renderPage(page);
+      }
+    } else {
+      status = "Failed to parse page data";
+    }
+  } catch (e) {
+    console.error("load-page failed:", e);
+    status = `Failed to load page ${index + 1}`;
+  } finally {
+    loading = false;
+  }
+}
+
+function toggleOverlays() {
+  overlaysVisible = !overlaysVisible;
+  requestDraw();
+}
+
+function toggleFullscreen() {
+  isFullscreen = !isFullscreen;
+  requestAnimationFrame(() => {
+    fitToCanvas();
+    draw();
+  });
+}
+
+function handleKeydown(e: KeyboardEvent) {
+  if (e.key === "Escape" && isFullscreen) {
+    isFullscreen = false;
+    requestAnimationFrame(() => {
+      fitToCanvas();
+      draw();
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Model context + text selection
+// ---------------------------------------------------------------------------
+
+async function updatePageContext() {
+  if (!app) return;
+  const page = currentPageIndex + 1;
+  const lineCount = currentAlto?.textLines?.length ?? 0;
+  const sampleLines = currentAlto?.textLines
+    ?.slice(0, 5)
+    .map(l => l.transcription)
+    .join("\n") ?? "";
+
+  try {
+    await app.updateModelContext({
+      content: [{
+        type: "text",
+        text: [
+          `Document viewer: page ${page}/${totalPages}`,
+          lineCount > 0 ? `${lineCount} transcribed text lines.` : "No transcribed text.",
+          sampleLines ? `First lines:\n${sampleLines}` : "",
+        ].filter(Boolean).join("\n"),
+      }],
+    });
+  } catch (e) {
+    console.error("[updateModelContext]", e);
+  }
 }
 
 async function sendLineText(line: TextLine) {
@@ -395,9 +399,9 @@ async function sendLineText(line: TextLine) {
   try {
     await app.sendMessage({
       role: "user",
-      content: [{ type: "text", text: `[Page ${currentPageIndex + 1}] ${line.id}: ${line.transcription}` }],
+      content: [{ type: "text", text: `Selected text from page ${currentPageIndex + 1}/${totalPages}:\n"${line.transcription}"` }],
     });
-    status = "Text sent for translation";
+    status = "Text sent";
   } catch (e) {
     console.error(e);
     status = "Failed to send text";
@@ -410,86 +414,36 @@ async function sendLineText(line: TextLine) {
 // Lifecycle
 // ---------------------------------------------------------------------------
 
+let resizeObserver: ResizeObserver | null = null;
+
 onMount(() => {
-  console.log("[DocumentViewer] onMount:", data.imageUrls.length, "pages");
-
-  // Initialize OSD (empty — no tile source yet, loadPage will open one)
-  viewer = new OpenSeadragon.Viewer({
-    element: osdContainer,
-    showNavigationControl: false,
-    gestureSettingsMouse: { clickToZoom: false },
-    prefixUrl: "",
-    maxZoomPixelRatio: 4,
-    minZoomLevel: 0.5,
-    visibilityRatio: 0.5,
+  resizeObserver = new ResizeObserver(() => {
+    if (image) {
+      fitToCanvas();
+      draw();
+    }
   });
+  resizeObserver.observe(containerEl);
 
-  // Create Konva container inside OSD's canvas element
-  konvaDiv = document.createElement("div");
-  konvaDiv.style.position = "absolute";
-  konvaDiv.style.top = "0";
-  konvaDiv.style.left = "0";
-  konvaDiv.style.width = "100%";
-  konvaDiv.style.height = "100%";
-  konvaDiv.style.pointerEvents = "none";
-  viewer.canvas.appendChild(konvaDiv);
-
-  const cw = viewer.container.clientWidth;
-  const ch = viewer.container.clientHeight;
-  stage = new Konva.Stage({
-    container: konvaDiv,
-    width: cw || 800,
-    height: ch || 600,
-    listening: false,
-  });
-  layer = new Konva.Layer();
-  stage.add(layer);
-
-  // Viewport sync
-  viewer.addHandler("animation", requestSync);
-  viewer.addHandler("animation-finish", syncKonva);
-  viewer.addHandler("open", syncKonva);
-  viewer.addHandler("resize", syncKonva);
-
-  // OSD lifecycle logging
-  viewer.addHandler("open", () => console.log("[OSD] 'open' event — image loaded"));
-  viewer.addHandler("open-failed", (event: any) => console.error("[OSD] 'open-failed':", event));
-
-  // Container resize
-  resizeObserver = new ResizeObserver(() => syncKonva());
-  resizeObserver.observe(viewer.container);
-
-  // Mouse interaction
-  const el = viewer.container;
-  el.addEventListener("mousedown", handleMouseDown);
-  el.addEventListener("mousemove", handleMouseMove);
-  el.addEventListener("click", handleClick);
-  el.addEventListener("mouseleave", handleMouseLeave);
-
-  // Load first page
-  loadPage(0);
+  // Seed cache with first page from initial data
+  pageCache.set(0, data.firstPage);
+  renderPage(data.firstPage);
 });
 
 onDestroy(() => {
-  const el = viewer?.container;
-  el?.removeEventListener("mousedown", handleMouseDown);
-  el?.removeEventListener("mousemove", handleMouseMove);
-  el?.removeEventListener("click", handleClick);
-  el?.removeEventListener("mouseleave", handleMouseLeave);
   resizeObserver?.disconnect();
-  stage?.destroy();
-  konvaDiv?.remove();
-  viewer?.destroy();
-
-  // Clean up blob URLs
-  for (const url of blobUrls) {
-    URL.revokeObjectURL(url);
-  }
+  if (rafId) cancelAnimationFrame(rafId);
 });
 </script>
 
+<svelte:window onkeydown={handleKeydown} />
+
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="viewer-wrapper" class:fullscreen={displayMode === "fullscreen"}>
+<div
+  class="viewer-wrapper"
+  class:fullscreen={effectiveFullscreen}
+  bind:this={wrapperEl}
+>
   <!-- Controls -->
   <div class="controls">
     <button class="control-btn" class:active={overlaysVisible} onclick={toggleOverlays}>
@@ -498,33 +452,46 @@ onDestroy(() => {
 
     {#if totalPages > 1}
       <div class="page-nav">
-        <button class="control-btn" onclick={() => goToPage(currentPageIndex - 1)} disabled={currentPageIndex === 0}>
+        <button class="control-btn" onclick={() => goToPage(currentPageIndex - 1)} disabled={currentPageIndex === 0 || loading}>
           Prev
         </button>
         <span class="page-indicator">
-          Page {currentPageIndex + 1} / {totalPages}
+          {#if loading}
+            Loading...
+          {:else}
+            Page {currentPageIndex + 1} / {totalPages}
+          {/if}
         </span>
-        <button class="control-btn" onclick={() => goToPage(currentPageIndex + 1)} disabled={currentPageIndex === totalPages - 1}>
+        <button class="control-btn" onclick={() => goToPage(currentPageIndex + 1)} disabled={currentPageIndex === totalPages - 1 || loading}>
           Next
         </button>
       </div>
     {/if}
 
-    {#if pageStatus}
-      <span class="page-status">{pageStatus}</span>
+    <button class="control-btn fullscreen-btn" onclick={toggleFullscreen}>
+      {effectiveFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+    </button>
+
+    {#if status}
+      <span class="page-status">{status}</span>
     {/if}
   </div>
 
-  <!-- OpenSeadragon (Konva canvas injected inside via JS) -->
-  <div class="osd-container" bind:this={osdContainer}></div>
-
-  <!-- Status -->
-  {#if status}
-    <p class="status">{status}</p>
-  {/if}
+  <!-- Canvas -->
+  <div class="canvas-container" bind:this={containerEl}>
+    <canvas
+      bind:this={canvasEl}
+      style="cursor: grab"
+      onpointerdown={handlePointerDown}
+      onpointermove={handlePointerMove}
+      onpointerup={handlePointerUp}
+      onpointerleave={handlePointerLeave}
+      onwheel={handleWheel}
+    ></canvas>
+  </div>
 </div>
 
-<!-- Tooltip (fixed-position, follows mouse) -->
+<!-- Tooltip -->
 {#if tooltip && tooltip.x > 0}
   <div class="tooltip" style:left="{tooltip.x}px" style:top="{tooltip.y}px">
     {tooltip.text}
@@ -541,8 +508,13 @@ onDestroy(() => {
   min-height: 60vh;
 }
 .viewer-wrapper.fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
   min-height: 0;
-  height: 100%;
+  height: 100vh;
+  background: var(--color-background-primary, #fff);
+  padding: var(--spacing-sm, 0.5rem);
 }
 
 .controls {
@@ -566,10 +538,8 @@ onDestroy(() => {
 .page-status {
   font-size: var(--font-text-sm-size, 0.875rem);
   color: var(--color-text-secondary);
-  margin-left: auto;
 }
 
-/* Buttons */
 .control-btn {
   padding: var(--spacing-sm, 0.5rem) var(--spacing-md, 1rem);
   min-width: 80px;
@@ -594,9 +564,11 @@ onDestroy(() => {
   opacity: 0.5;
   cursor: not-allowed;
 }
+.fullscreen-btn {
+  margin-left: auto;
+}
 
-/* OSD Container */
-.osd-container {
+.canvas-container {
   width: 100%;
   flex: 1;
   background: var(--color-background-secondary, #f5f5f5);
@@ -606,8 +578,16 @@ onDestroy(() => {
   min-height: 400px;
   position: relative;
 }
+.viewer-wrapper.fullscreen .canvas-container {
+  min-height: 0;
+  border-radius: var(--border-radius-md, 6px);
+}
+.canvas-container canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
 
-/* Tooltip */
 .tooltip {
   position: fixed;
   background: var(--color-tooltip-background, #333);
@@ -620,14 +600,5 @@ onDestroy(() => {
   max-width: 300px;
   word-wrap: break-word;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-/* Status */
-.status {
-  font-size: var(--font-text-sm-size, 0.875rem);
-  color: var(--color-text-secondary);
-  text-align: center;
-  min-height: 1.25rem;
-  margin: 0;
 }
 </style>

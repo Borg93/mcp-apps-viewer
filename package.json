@@ -1,8 +1,8 @@
 {
-  "name": "riksarkivet-viewer",
+  "name": "document-viewer",
   "version": "1.0.0",
   "type": "module",
-  "description": "Riksarkivet Document Viewer - Interactive ALTO XML visualization",
+  "description": "Document Viewer - Interactive ALTO XML visualization",
   "scripts": {
     "build": "tsc --noEmit && cross-env INPUT=mcp-app.html vite build",
     "build:watch": "cross-env INPUT=mcp-app.html vite build --watch",
@@ -10,18 +10,11 @@
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^1.0.0",
-    "@tailwindcss/vite": "^4.1.18",
-    "bits-ui": "^2.15.5",
-    "konva": "^10.2.0",
-    "openseadragon": "^5.0.1",
-    "svelte": "^5.0.0",
-    "tailwindcss": "^4.1.18",
-    "zod": "^4.3.6"
+    "svelte": "^5.0.0"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
     "@types/node": "22.10.0",
-    "@types/openseadragon": "^5.0.2",
     "cross-env": "^10.1.0",
     "typescript": "^5.9.3",
     "vite": "^6.0.0",

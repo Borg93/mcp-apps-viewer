@@ -3,7 +3,7 @@
 </script>
 
 <div class="empty-state">
-  <h2>Riksarkivet Document Viewer</h2>
+  <h2>Document Viewer</h2>
   <p>Waiting for document data...</p>
   <p class="hint">
     Use <code>view-document</code> with paired image and ALTO XML URLs

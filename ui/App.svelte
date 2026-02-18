@@ -8,93 +8,69 @@ import {
   type McpUiHostContext,
 } from "@modelcontextprotocol/ext-apps";
 
-// Components
 import DocumentViewer from "./components/DocumentViewer.svelte";
 import EmptyState from "./components/EmptyState.svelte";
 
-// Types & Utils
 import type { ViewerData } from "./lib/types";
 import { parseToolResult } from "./lib/utils";
 
-// =============================================================================
-// Constants
-// =============================================================================
-
 const DEFAULT_INLINE_HEIGHT = 300;
-
-// =============================================================================
-// State
-// =============================================================================
 
 let app = $state<App | null>(null);
 let hostContext = $state<McpUiHostContext | undefined>();
 let viewerData = $state<ViewerData | null>(null);
+let error = $state<string | null>(null);
 let displayMode = $state<"inline" | "fullscreen">("inline");
 
-// Derived: whether we're showing a "card" state (empty/error) vs viewer
-let hasError = $derived(viewerData && "error" in viewerData && viewerData.error);
-let hasData = $derived(viewerData && "imageUrls" in viewerData && viewerData.imageUrls?.length > 0);
-let isCardState = $derived(!hasData || hasError || !app);
-
-// =============================================================================
-// Effects
-// =============================================================================
+let hasData = $derived(viewerData && viewerData.pageUrls.length > 0);
+let isCardState = $derived(!hasData || !!error || !app);
 
 $effect(() => {
-  if (hostContext?.theme) {
-    applyDocumentTheme(hostContext.theme);
-  }
-  if (hostContext?.styles?.variables) {
-    applyHostStyleVariables(hostContext.styles.variables);
-  }
-  if (hostContext?.styles?.css?.fonts) {
-    applyHostFonts(hostContext.styles.css.fonts);
-  }
-  if (hostContext?.displayMode) {
-    displayMode = hostContext.displayMode as "inline" | "fullscreen";
-  }
+  if (hostContext?.theme) applyDocumentTheme(hostContext.theme);
+  if (hostContext?.styles?.variables) applyHostStyleVariables(hostContext.styles.variables);
+  if (hostContext?.styles?.css?.fonts) applyHostFonts(hostContext.styles.css.fonts);
+  if (hostContext?.displayMode) displayMode = hostContext.displayMode as "inline" | "fullscreen";
 });
 
-// Request size based on state
 $effect(() => {
   if (!app || displayMode === "fullscreen") return;
   const height = isCardState ? DEFAULT_INLINE_HEIGHT : 600;
-  setTimeout(() => {
-    app?.sendSizeChanged({ height });
-  }, 50);
+  setTimeout(() => app?.sendSizeChanged({ height }), 50);
 });
-
-// =============================================================================
-// Lifecycle
-// =============================================================================
 
 onMount(async () => {
   const instance = new App(
-    { name: "Riksarkivet Viewer", version: "1.0.0" },
+    { name: "Document Viewer", version: "1.0.0" },
     {},
-    { autoResize: false }
+    { autoResize: false },
   );
 
   instance.ontoolinput = (params) => {
-    console.info("Received tool call input:", params);
+    console.info("Tool input:", params);
   };
 
   instance.ontoolresult = (result) => {
-    console.info("Received tool call result:", result);
+    console.info("Tool result:", result);
+    if (result.isError) {
+      error = result.content?.map((c: any) => ("text" in c ? c.text : "")).join(" ") ?? "Unknown error";
+      return;
+    }
     const data = parseToolResult(result);
-    if (data && !("error" in data && data.error)) {
+    if (data) {
       viewerData = data;
-    } else if (data) {
-      viewerData = data;
+      error = null;
+    } else {
+      error = "Failed to parse tool result";
     }
   };
 
   instance.ontoolcancelled = (params) => {
-    console.info("Tool call cancelled:", params.reason);
+    error = `Cancelled: ${params.reason}`;
   };
 
   instance.onerror = (err) => {
     console.error("App error:", err);
+    error = err.message;
   };
 
   instance.onhostcontextchanged = (params) => {
@@ -118,16 +94,13 @@ onMount(async () => {
 >
   {#if !app}
     <div class="loading">Connecting...</div>
-
-  {:else if viewerData && hasData && !hasError}
+  {:else if viewerData && hasData && !error}
     <DocumentViewer {app} data={viewerData} {displayMode} />
-
-  {:else if hasError && viewerData}
+  {:else if error}
     <div class="error-state">
-      <h2>Error Loading Document</h2>
-      <p>{"message" in viewerData ? viewerData.message : "Unknown error"}</p>
+      <h2>Error</h2>
+      <p>{error}</p>
     </div>
-
   {:else}
     <EmptyState />
   {/if}
@@ -146,7 +119,6 @@ onMount(async () => {
   overflow: hidden;
 }
 
-/* Center card states (empty, error, loading) */
 .main.card-state {
   justify-content: center;
   align-items: center;
