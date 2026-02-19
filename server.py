@@ -1,7 +1,14 @@
 import argparse
+import logging
 import os
 
 from src import mcp
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -22,7 +29,7 @@ def main():
     if args.stdio:
         mcp.run(transport="stdio")
     else:
-        print(f"MCP Server listening on http://localhost:{args.port}/mcp")
+        logger.info("MCP Server listening on http://localhost:%d/mcp", args.port)
         mcp.run(
             transport="streamable-http",
             host="0.0.0.0",

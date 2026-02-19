@@ -232,7 +232,7 @@ function handlePointerUp(e: PointerEvent) {
   const cy = e.clientY - rect.top;
   const img = screenToImage(cx, cy, transform);
   const hit = findHitAtImageCoord(img.x, img.y, currentPolygons);
-  if (hit) sendLineText(hit.line);
+  if (hit) updatePageContext(hit.line);
 }
 
 function applyPanInertia() {
@@ -406,37 +406,22 @@ function prefetchAdjacentPages(index: number) {
 // Model context + text selection
 // ---------------------------------------------------------------------------
 
-async function updatePageContext() {
+async function updatePageContext(selectedLine?: TextLine) {
   if (!app) return;
   const page = currentPageIndex + 1;
   const lines = currentAlto?.textLines ?? [];
   const fullText = lines.map(l => l.transcription).join("\n");
 
+  const parts = [`Document viewer: page ${page}/${totalPages}`];
+  if (selectedLine) parts.push(`User selected text: "${selectedLine.transcription}"`);
+  parts.push(fullText ? `Full page transcription:\n${fullText}` : "(no transcribed text on this page)");
+
   try {
     await app.updateModelContext({
-      content: [{
-        type: "text",
-        text: [
-          `Document viewer: page ${page}/${totalPages}`,
-          fullText
-            ? `Full page transcription:\n${fullText}`
-            : "(no transcribed text on this page)",
-        ].join("\n"),
-      }],
+      content: [{ type: "text", text: parts.join("\n") }],
     });
   } catch (e) {
     console.error("[updateModelContext]", e);
-  }
-}
-
-async function sendLineText(line: TextLine) {
-  try {
-    await app.sendMessage({
-      role: "user",
-      content: [{ type: "text", text: `I selected this text on page ${currentPageIndex + 1}: "${line.transcription}"\nPlease translate or explain this text in context of the full page.` }],
-    });
-  } catch (e) {
-    console.error("sendLineText failed:", e);
   }
 }
 

@@ -21,9 +21,6 @@ from src import mcp
 from src.fetchers import build_page_data, fetch_and_parse_alto, fetch_thumbnail_as_data_url
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-logging.getLogger("httpcore").setLevel(logging.WARNING)
-logging.getLogger("httpx").setLevel(logging.WARNING)
 
 DIST_DIR = Path(__file__).parent.parent / "dist"
 RESOURCE_URI = "ui://document-viewer/mcp-app.html"

@@ -10,8 +10,6 @@ import {
 
 import DocumentViewer from "./components/DocumentViewer.svelte";
 import ThumbnailStrip from "./components/ThumbnailStrip.svelte";
-import EmptyState from "./components/EmptyState.svelte";
-
 import type { ViewerData } from "./lib/types";
 import { parseToolResult } from "./lib/utils";
 
@@ -151,8 +149,6 @@ onMount(async () => {
       <h2>Error</h2>
       <p>{error}</p>
     </div>
-  {:else}
-    <EmptyState />
   {/if}
 </main>
 
