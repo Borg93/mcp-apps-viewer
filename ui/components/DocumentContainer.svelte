@@ -150,14 +150,14 @@ $effect(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-background-secondary, #f5f5f5);
+  background: var(--color-background-secondary, light-dark(#f5f4ed, #201d18));
 }
 
 .page-loading-shimmer {
   width: 60%;
   height: 80%;
   border-radius: var(--border-radius-md, 6px);
-  background: linear-gradient(90deg, var(--color-background-tertiary, #eee) 25%, var(--color-background-secondary, #f5f5f5) 50%, var(--color-background-tertiary, #eee) 75%);
+  background: linear-gradient(90deg, var(--color-background-tertiary, light-dark(#ebe9e1, #2a2620)) 25%, var(--color-background-secondary, light-dark(#f5f4ed, #201d18)) 50%, var(--color-background-tertiary, light-dark(#ebe9e1, #2a2620)) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
 }

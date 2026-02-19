@@ -216,14 +216,14 @@ function getThumbnailUrl(index: number): string | null {
 .page-indicator {
   text-align: center;
   font-size: 11px;
-  color: var(--color-text-secondary);
+  color: var(--color-text-secondary, light-dark(#5c5c5c, #a8a6a3));
   padding: var(--spacing-xs, 0.25rem) 0;
   flex-shrink: 0;
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--color-background-secondary, #f5f5f5);
-  border-bottom: 1px solid var(--color-border-primary);
+  background: var(--color-background-secondary, light-dark(#f5f4ed, #201d18));
+  border-bottom: 1px solid var(--color-border-primary, light-dark(#d4d2cb, #3a3632));
 }
 
 .thumbnail-strip {
@@ -236,8 +236,8 @@ function getThumbnailUrl(index: number): string | null {
   flex-direction: column;
   gap: var(--spacing-xs, 0.25rem);
   padding: var(--spacing-xs, 0.25rem);
-  background: var(--color-background-secondary, #f5f5f5);
-  border-right: 1px solid var(--color-border-primary);
+  background: var(--color-background-secondary, light-dark(#f5f4ed, #201d18));
+  border-right: 1px solid var(--color-border-primary, light-dark(#d4d2cb, #3a3632));
   border-radius: var(--border-radius-lg, 10px) 0 0 var(--border-radius-lg, 10px);
 }
 
@@ -257,7 +257,7 @@ function getThumbnailUrl(index: number): string | null {
   overflow: hidden;
   cursor: pointer;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
-  background: var(--color-background-primary, #fff);
+  background: var(--color-background-primary, light-dark(#faf9f5, #1a1815));
   padding: 0;
   font: inherit;
   color: inherit;
@@ -285,12 +285,12 @@ function getThumbnailUrl(index: number): string | null {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-background-tertiary, #eee);
+  background: var(--color-background-tertiary, light-dark(#ebe9e1, #2a2620));
 }
 
 .placeholder-text {
   font-size: var(--font-text-sm-size, 0.875rem);
-  color: var(--color-text-secondary);
+  color: var(--color-text-secondary, light-dark(#5c5c5c, #a8a6a3));
   opacity: 0.6;
 }
 

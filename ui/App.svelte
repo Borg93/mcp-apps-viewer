@@ -11,7 +11,8 @@ import {
 import DocumentContainer from "./components/DocumentContainer.svelte";
 import type { ViewerData } from "./lib/types";
 
-const DEFAULT_INLINE_HEIGHT = 300;
+const CARD_HEIGHT = 300;
+const VIEWER_HEIGHT = 550;
 
 let app = $state<App | null>(null);
 let hostContext = $state<McpUiHostContext | undefined>();
@@ -29,10 +30,28 @@ $effect(() => {
   if (hostContext?.styles?.css?.fonts) applyHostFonts(hostContext.styles.css.fonts);
 });
 
+// Adapt sizing per containerDimensions spec
 $effect(() => {
   if (!app) return;
-  const height = (isCardState && !isStreaming) ? DEFAULT_INLINE_HEIGHT : 700;
-  setTimeout(() => app?.sendSizeChanged({ height }), 50);
+
+  const desired = (isCardState && !isStreaming) ? CARD_HEIGHT : VIEWER_HEIGHT;
+  const dims = hostContext?.containerDimensions as Record<string, number> | undefined;
+
+  if (dims && "height" in dims) {
+    // Fixed height — host controls, fill the container (no sendSizeChanged needed)
+    document.documentElement.style.height = "100vh";
+    return;
+  }
+
+  document.documentElement.style.height = "";
+
+  if (dims && "maxHeight" in dims && dims.maxHeight) {
+    // Flexible with max — don't exceed host's maxHeight
+    setTimeout(() => app?.sendSizeChanged({ height: Math.min(desired, dims.maxHeight) }), 50);
+  } else {
+    // Unbounded — we control height
+    setTimeout(() => app?.sendSizeChanged({ height: desired }), 50);
+  }
 });
 
 onMount(async () => {
@@ -146,9 +165,9 @@ onMount(async () => {
   padding: var(--spacing-sm, 0.5rem);
   display: flex;
   flex-direction: column;
-  background: var(--color-background-primary);
+  background: var(--color-background-primary, light-dark(#faf9f5, #1a1815));
   border-radius: var(--border-radius-lg, 10px);
-  border: 1px solid var(--color-border-primary);
+  border: 1px solid var(--color-border-primary, light-dark(#d4d2cb, #3a3632));
   overflow: hidden;
 }
 
@@ -163,7 +182,7 @@ onMount(async () => {
   justify-content: center;
   flex: 1;
   font-size: 1rem;
-  color: var(--color-text-secondary);
+  color: var(--color-text-secondary, light-dark(#5c5c5c, #a8a6a3));
 }
 
 .skeleton {
@@ -180,7 +199,7 @@ onMount(async () => {
   gap: var(--spacing-xs, 0.25rem);
   padding: var(--spacing-xs, 0.25rem);
   background: var(--color-background-secondary, #f5f5f5);
-  border-right: 1px solid var(--color-border-primary);
+  border-right: 1px solid var(--color-border-primary, light-dark(#d4d2cb, #3a3632));
   border-radius: var(--border-radius-lg, 10px) 0 0 var(--border-radius-lg, 10px);
 }
 .skeleton-thumb {
@@ -204,7 +223,7 @@ onMount(async () => {
 }
 .skeleton-message {
   font-size: var(--font-text-sm-size, 0.875rem);
-  color: var(--color-text-secondary);
+  color: var(--color-text-secondary, light-dark(#5c5c5c, #a8a6a3));
 }
 .skeleton-shimmer {
   width: 60%;
@@ -222,19 +241,19 @@ onMount(async () => {
 .error-state {
   text-align: center;
   padding: var(--spacing-lg, 1.5rem);
-  background: var(--color-background-secondary);
+  background: var(--color-background-danger, light-dark(#fef2f2, #2d1515));
   border-radius: var(--border-radius-lg, 10px);
-  border: 1px solid var(--color-border-primary);
+  border: 1px solid var(--color-border-danger, light-dark(#fca5a5, #7f1d1d));
 }
 
 .error-state h2 {
   margin: 0 0 var(--spacing-sm, 0.5rem) 0;
   font-size: 1.25rem;
-  color: var(--color-error);
+  color: var(--color-text-danger, #b91c1c);
 }
 
 .error-state p {
   margin: var(--spacing-sm, 0.5rem) 0;
-  color: var(--color-text-secondary);
+  color: var(--color-text-secondary, light-dark(#5c5c5c, #a8a6a3));
 }
 </style>

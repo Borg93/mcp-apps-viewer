@@ -18,11 +18,15 @@
   /* Border */
   --color-border-primary: light-dark(#d4d2cb, #3a3632);
 
-  /* Accent colors */
+  /* Accent colors (custom — not in host spec) */
   --color-accent: var(--claude-orange);
   --color-accent-dark: var(--claude-orange-dark);
   --color-text-on-accent: #ffffff;
-  --color-error: light-dark(#b91c1c, #f87171);
+
+  /* Standard spec danger/error colors */
+  --color-text-danger: light-dark(#b91c1c, #f87171);
+  --color-background-danger: light-dark(#fef2f2, #2d1515);
+  --color-border-danger: light-dark(#fca5a5, #7f1d1d);
 
   /* SVG Container background (document image) */
   --color-svg-background: light-dark(#ffffff, #252220);

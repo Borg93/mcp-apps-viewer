@@ -243,7 +243,7 @@ onDestroy(() => {
 
 .canvas-container {
   flex: 1;
-  background: var(--color-background-secondary, #f5f5f5);
+  background: var(--color-background-secondary, light-dark(#f5f4ed, #201d18));
   overflow: hidden;
   position: relative;
 }
@@ -258,8 +258,8 @@ onDestroy(() => {
   bottom: var(--spacing-sm, 0.5rem);
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.6);
-  color: #fff;
+  background: rgba(0, 0, 0, 0.4);
+  color: rgba(255, 255, 255, 0.85);
   padding: var(--spacing-xs, 0.25rem) var(--spacing-md, 0.75rem);
   border-radius: var(--border-radius-md, 6px);
   font-size: var(--font-text-sm-size, 0.875rem);
@@ -273,8 +273,8 @@ onDestroy(() => {
 
 .tooltip {
   position: fixed;
-  background: var(--color-tooltip-background, #333);
-  color: var(--color-tooltip-text, #fff);
+  background: var(--color-tooltip-background, light-dark(rgba(44, 44, 44, 0.95), rgba(232, 230, 227, 0.95)));
+  color: var(--color-tooltip-text, light-dark(#faf9f5, #1a1815));
   padding: var(--spacing-sm, 0.5rem) var(--spacing-md, 0.75rem);
   border-radius: var(--border-radius-md, 6px);
   font-size: var(--font-text-sm-size, 0.875rem);
