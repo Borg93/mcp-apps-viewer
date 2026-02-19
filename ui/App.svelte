@@ -8,10 +8,8 @@ import {
   type McpUiHostContext,
 } from "@modelcontextprotocol/ext-apps";
 
-import DocumentViewer from "./components/DocumentViewer.svelte";
-import ThumbnailStrip from "./components/ThumbnailStrip.svelte";
+import DocumentContainer from "./components/DocumentContainer.svelte";
 import type { ViewerData } from "./lib/types";
-import { parseToolResult } from "./lib/utils";
 
 const DEFAULT_INLINE_HEIGHT = 300;
 
@@ -22,14 +20,8 @@ let error = $state<string | null>(null);
 let isStreaming = $state(false);
 let streamingMessage = $state("");
 
-let currentPageIndex = $state(0);
 let hasData = $derived(viewerData && viewerData.pageUrls.length > 0);
-let showThumbnails = $derived(viewerData && viewerData.pageUrls.length > 1);
 let isCardState = $derived(!hasData || !!error || !app);
-
-function handlePageSelect(index: number) {
-  currentPageIndex = index;
-}
 
 $effect(() => {
   if (hostContext?.theme) applyDocumentTheme(hostContext.theme);
@@ -58,33 +50,33 @@ onMount(async () => {
   };
 
   instance.ontoolinput = (params) => {
-    console.info("Tool input:", params);
     isStreaming = true;
-    // Show what's being loaded based on tool arguments
     const args = params.arguments as Record<string, unknown>;
-    const pageCount = (args?.image_urls as string[])?.length;
+    const imageUrls = args?.image_urls as string[] | undefined;
+    const altoUrls = args?.alto_urls as string[] | undefined;
+
+    if (imageUrls && altoUrls && imageUrls.length === altoUrls.length) {
+      viewerData = {
+        pageUrls: imageUrls.map((image, i) => ({ image, alto: altoUrls[i] })),
+      };
+      error = null;
+    }
+
+    const pageCount = imageUrls?.length;
     streamingMessage = pageCount
       ? `Loading ${pageCount} page document...`
       : "Loading document...";
   };
 
   instance.ontoolresult = (result) => {
-    console.info("Tool result:", result);
+    isStreaming = false;
     if (result.isError) {
       error = result.content?.map((c: any) => ("text" in c ? c.text : "")).join(" ") ?? "Unknown error";
-      return;
-    }
-    const data = parseToolResult(result);
-    if (data) {
-      currentPageIndex = 0;
-      viewerData = data;
-      error = null;
-    } else {
-      error = "Failed to parse tool result";
     }
   };
 
   instance.ontoolcancelled = (params) => {
+    isStreaming = false;
     error = `Cancelled: ${params.reason}`;
   };
 
@@ -128,22 +120,9 @@ onMount(async () => {
       </div>
     </div>
   {:else if viewerData && hasData && !error}
-    <div class="split-layout">
-      {#if showThumbnails}
-        <ThumbnailStrip
-          {app}
-          data={viewerData}
-          {currentPageIndex}
-          onPageSelect={handlePageSelect}
-        />
-      {/if}
-      <DocumentViewer
-        {app}
-        data={viewerData}
-        {currentPageIndex}
-        onPageChange={handlePageSelect}
-      />
-    </div>
+    {#key viewerData}
+      <DocumentContainer app={app} data={viewerData} />
+    {/key}
   {:else if error}
     <div class="error-state">
       <h2>Error</h2>
@@ -168,15 +147,6 @@ onMount(async () => {
 .main.card-state {
   justify-content: center;
   align-items: center;
-}
-
-.split-layout {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  max-height: 100%;
-  overflow: hidden;
-  gap: 0;
 }
 
 .loading {

@@ -34,10 +34,9 @@ export interface ThumbnailData {
   dataUrl: string;
 }
 
-/** Initial payload from view-document tool */
+/** Initial payload — built from tool arguments */
 export interface ViewerData {
   pageUrls: PageUrl[];
-  firstPage: PageData;
 }
 
 export interface TooltipState {

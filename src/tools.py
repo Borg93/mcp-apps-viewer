@@ -2,7 +2,7 @@
 Document Viewer MCP App — Tool & resource registrations.
 
 Tools:
-  - view-document: entry point, fetches first page, returns URL list for pagination
+  - view-document: entry point, returns transcription for the model
   - load-page: fetches a single page on demand (called by View via callServerTool)
   - load-thumbnails: batch-fetches thumbnail images (called by View via callServerTool)
 """
@@ -31,7 +31,7 @@ RESOURCE_URI = "ui://document-viewer/mcp-app.html"
     description=(
         "Display document pages with zoomable images and ALTO text overlays. "
         "Provide paired lists: image_urls[i] pairs with alto_urls[i]. "
-        "Only the first page is fetched immediately; remaining pages load on demand via pagination."
+        "Pages load on demand via pagination in the viewer."
     ),
     app=AppConfig(resource_uri=RESOURCE_URI),
 )
@@ -61,32 +61,14 @@ async def view_document(
         summary_parts.append(transcription)
     else:
         summary_parts.append("(no transcribed text on this page)")
+
+    if not has_ui:
+        summary_parts.append(f"\nImage URLs:\n" + "\n".join(image_urls))
     summary = "\n".join(summary_parts)
 
-    # Plain-text fallback for hosts without UI support
-    if not has_ui:
-        logger.info(f"view-document (text fallback): {len(image_urls)} pages")
-        return ToolResult(
-            content=[types.TextContent(type="text", text=summary)],
-        )
-
-    # Full UI path: fetch image + ALTO for first page
-    page_urls = [
-        {"image": img_url, "alto": alto_url}
-        for img_url, alto_url in zip(image_urls, alto_urls)
-    ]
-    first_page, errors = build_page_data(0, image_urls[0], alto_urls[0])
-
-    if errors:
-        summary += f"\nErrors: {'; '.join(errors)}"
-
-    logger.info(f"view-document: {len(page_urls)} pages, {len(text_lines)} lines on page 1")
+    logger.info(f"view-document: {len(image_urls)} pages, {len(text_lines)} lines on page 1")
     return ToolResult(
         content=[types.TextContent(type="text", text=summary)],
-        structured_content={
-            "pageUrls": page_urls,
-            "firstPage": first_page,
-        },
     )
 
 

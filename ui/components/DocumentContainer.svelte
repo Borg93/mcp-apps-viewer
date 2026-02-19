@@ -1,0 +1,167 @@
+<script lang="ts">
+import type { App } from "@modelcontextprotocol/ext-apps";
+import type { ViewerData, PageData } from "../lib/types";
+import { parsePageResult } from "../lib/utils";
+import DocumentViewer from "./DocumentViewer.svelte";
+import ThumbnailStrip from "./ThumbnailStrip.svelte";
+
+interface Props {
+  app: App;
+  data: ViewerData;
+}
+
+let { app, data }: Props = $props();
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+
+let currentPageIndex = $state(0);
+let totalPages = $derived(data.pageUrls.length);
+let showThumbnails = $derived(data.pageUrls.length > 1);
+
+// Client-side page cache (seeded lazily in the page-index effect below)
+let pageCache = new Map<number, PageData>();
+let currentPage = $state<PageData | null>(null);
+
+function handlePageSelect(index: number) {
+  currentPageIndex = index;
+}
+
+// ---------------------------------------------------------------------------
+// Page fetching + caching
+// ---------------------------------------------------------------------------
+
+/** Fetch page ALTO data from server (image loads directly via URL) */
+async function fetchPageData(index: number): Promise<PageData | null> {
+  if (index < 0 || index >= totalPages) return null;
+  if (pageCache.has(index)) return pageCache.get(index)!;
+
+  try {
+    const urls = data.pageUrls[index];
+    const result = await app.callServerTool({
+      name: "load-page",
+      arguments: {
+        image_url: urls.image,
+        alto_url: urls.alto,
+        page_index: index,
+      },
+    });
+
+    if (result.isError) {
+      const errText = result.content?.map((c: any) => ("text" in c ? c.text : "")).join(" ") ?? "Unknown error";
+      console.error("load-page error:", errText);
+      return null;
+    }
+
+    const page = parsePageResult(result);
+    if (page) {
+      pageCache.set(index, page);
+      return page;
+    }
+  } catch (e) {
+    console.error("load-page failed:", e);
+  }
+  return null;
+}
+
+/** Fetch and set current page — use cache or fetch ALTO via callServerTool */
+async function fetchAndRenderPage(index: number) {
+  if (index < 0 || index >= totalPages) return;
+
+  // Check cache first — instant render, no server call
+  const cached = pageCache.get(index);
+  if (cached) {
+    currentPage = cached;
+    prefetchAdjacentPages(index);
+    return;
+  }
+
+  const page = await fetchPageData(index);
+  if (page && currentPageIndex === index) {
+    currentPage = page;
+    prefetchAdjacentPages(index);
+  }
+}
+
+/** Prefetch ALTO data for adjacent pages so navigation feels instant */
+function prefetchAdjacentPages(index: number) {
+  const neighbors = [index - 1, index + 1];
+  for (const n of neighbors) {
+    if (n >= 0 && n < totalPages && !pageCache.has(n)) {
+      // Fire and forget — don't await, don't block rendering
+      fetchPageData(n);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Watch page index changes
+// ---------------------------------------------------------------------------
+
+let lastRenderedIndex = -1;
+$effect(() => {
+  const idx = currentPageIndex;
+  if (idx !== lastRenderedIndex) {
+    lastRenderedIndex = idx;
+    fetchAndRenderPage(idx);
+  }
+});
+</script>
+
+<div class="split-layout">
+  {#if showThumbnails}
+    <ThumbnailStrip
+      {app}
+      {data}
+      {currentPageIndex}
+      onPageSelect={handlePageSelect}
+    />
+  {/if}
+  {#if currentPage}
+    <DocumentViewer
+      {app}
+      pageData={currentPage}
+      pageIndex={currentPageIndex}
+      {totalPages}
+      onPageChange={handlePageSelect}
+    />
+  {:else}
+    <div class="page-loading">
+      <div class="page-loading-shimmer"></div>
+    </div>
+  {/if}
+</div>
+
+<style>
+.split-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
+  gap: 0;
+}
+
+.page-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-background-secondary, #f5f5f5);
+}
+
+.page-loading-shimmer {
+  width: 60%;
+  height: 80%;
+  border-radius: var(--border-radius-md, 6px);
+  background: linear-gradient(90deg, var(--color-background-tertiary, #eee) 25%, var(--color-background-secondary, #f5f5f5) 50%, var(--color-background-tertiary, #eee) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+</style>

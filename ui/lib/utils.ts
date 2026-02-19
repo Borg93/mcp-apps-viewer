@@ -3,15 +3,26 @@
  */
 
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import type { ViewerData, PageData, ThumbnailData } from "./types";
+import type { PageData, ThumbnailData } from "./types";
 
 /**
- * Parse initial tool result (view-document) into ViewerData.
+ * Extract structuredContent from a CallToolResult.
+ * callServerTool responses should include it, but guard with a fallback
+ * that tries to parse the first text content block as JSON.
  */
-export function parseToolResult(result: CallToolResult): ViewerData | null {
+function getStructured(result: CallToolResult): Record<string, unknown> | null {
   const sc = (result as any).structuredContent;
-  if (sc && typeof sc === "object" && "pageUrls" in sc && "firstPage" in sc) {
-    return sc as ViewerData;
+  if (sc && typeof sc === "object") return sc;
+
+  // Fallback: try parsing first text block as JSON
+  const text = result.content?.find((c) => c.type === "text");
+  if (text && "text" in text) {
+    try {
+      const parsed = JSON.parse(text.text);
+      if (parsed && typeof parsed === "object") return parsed;
+    } catch {
+      // not JSON — ignore
+    }
   }
   return null;
 }
@@ -20,8 +31,8 @@ export function parseToolResult(result: CallToolResult): ViewerData | null {
  * Parse load-page tool result into a single PageData.
  */
 export function parsePageResult(result: CallToolResult): PageData | null {
-  const sc = (result as any).structuredContent;
-  if (sc && typeof sc === "object" && "page" in sc) {
+  const sc = getStructured(result);
+  if (sc && "page" in sc) {
     return sc.page as PageData;
   }
   return null;
@@ -31,8 +42,8 @@ export function parsePageResult(result: CallToolResult): PageData | null {
  * Parse load-thumbnails tool result into ThumbnailData array.
  */
 export function parseThumbnailResult(result: CallToolResult): ThumbnailData[] {
-  const sc = (result as any).structuredContent;
-  if (sc && typeof sc === "object" && "thumbnails" in sc) {
+  const sc = getStructured(result);
+  if (sc && "thumbnails" in sc) {
     return sc.thumbnails as ThumbnailData[];
   }
   return [];

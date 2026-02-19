@@ -192,9 +192,7 @@ function getThumbnailUrl(index: number): string | null {
       data-index={i}
       bind:this={placeholderEls[i]}
     >
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div
+      <button
         class="thumbnail-inner"
         onclick={() => onPageSelect(i)}
       >
@@ -209,7 +207,7 @@ function getThumbnailUrl(index: number): string | null {
             <span class="placeholder-text">{i + 1}</span>
           </div>
         {/if}
-      </div>
+      </button>
     </div>
   {/each}
 </div>
@@ -260,6 +258,11 @@ function getThumbnailUrl(index: number): string | null {
   cursor: pointer;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
   background: var(--color-background-primary, #fff);
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  display: block;
 }
 
 .thumbnail-slot.active .thumbnail-inner {
