@@ -5,6 +5,7 @@ import type { TextLine, PageData, PageAltoData, TooltipState } from "../lib/type
 import type { PolygonHit } from "../lib/geometry";
 import { buildPolygonHits, findHitAtImageCoord } from "../lib/geometry";
 import { CanvasController, type Transform } from "../lib/canvas";
+import TranscriptionPanel from "./TranscriptionPanel.svelte";
 
 interface Props {
   app: App;
@@ -23,6 +24,10 @@ let { app, pageData, pageIndex, totalPages, pageMetadata, onPageChange }: Props 
 
 let tooltip = $state<TooltipState | null>(null);
 let highlightedLineId = $state<string | null>(null);
+let showPanel = $state(false);
+
+let textLines = $derived(pageData?.alto?.textLines ?? []);
+let hasTextLines = $derived(textLines.length > 0);
 
 // Canvas element refs
 let canvasEl: HTMLCanvasElement;
@@ -101,6 +106,24 @@ function handlePointerLeave() {
     highlightedLineId = null;
     controller.requestDraw();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Transcription panel handlers
+// ---------------------------------------------------------------------------
+
+function handlePanelLineHover(lineId: string | null) {
+  if (lineId === highlightedLineId) return;
+  highlightedLineId = lineId;
+  tooltip = null;
+  controller?.requestDraw();
+}
+
+function handlePanelLineClick(line: TextLine) {
+  const centerX = line.hpos + line.width / 2;
+  const centerY = line.vpos + line.height / 2;
+  controller?.centerOn(centerX, centerY);
+  scheduleContextUpdate(line);
 }
 
 // ---------------------------------------------------------------------------
@@ -221,6 +244,28 @@ onDestroy(() => {
     {#if pageMetadata}
       <div class="page-info">{pageMetadata}</div>
     {/if}
+
+    {#if !showPanel && hasTextLines}
+      <button
+        class="panel-toggle"
+        onclick={() => showPanel = true}
+        title="Show transcription"
+      >
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+          <path d="M2 4h12M2 8h8M2 12h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </button>
+    {/if}
+
+    {#if showPanel && hasTextLines}
+      <TranscriptionPanel
+        {textLines}
+        {highlightedLineId}
+        onLineHover={handlePanelLineHover}
+        onLineClick={handlePanelLineClick}
+        onClose={() => showPanel = false}
+      />
+    {/if}
   </div>
 </div>
 
@@ -269,6 +314,31 @@ onDestroy(() => {
   max-width: 80%;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.panel-toggle {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--border-radius-sm, 4px);
+  background: var(--color-background-primary, light-dark(#faf9f5, #1a1815));
+  color: var(--color-text-secondary, light-dark(#5c5c5c, #a8a6a3));
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.panel-toggle:hover {
+  opacity: 1;
 }
 
 .tooltip {

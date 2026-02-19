@@ -111,6 +111,17 @@ export class CanvasController {
     this.draw();
   }
 
+  /** Pan so that the given image-space point is centered on the canvas. */
+  centerOn(imgX: number, imgY: number): void {
+    if (!this.canvas) return;
+    const cw = this.canvas.clientWidth;
+    const ch = this.canvas.clientHeight;
+    this.transform.x = cw / 2 - imgX * this.transform.scale;
+    this.transform.y = ch / 2 - imgY * this.transform.scale;
+    this.targetScale = this.transform.scale;
+    this.draw();
+  }
+
   requestDraw(): void {
     if (!this.isVisible) {
       this.pendingDraw = true;
