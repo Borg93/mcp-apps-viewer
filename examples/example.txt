@@ -25,3 +25,17 @@ image_urls:
     "https://sok.riksarkivet.se/dokument/alto/3000/30002056/30002056_00010.xml",
     "https://sok.riksarkivet.se/dokument/alto/3000/30002056/30002056_00011.xml"
   ]
+
+  metadata:
+  [
+    "metadata1",
+    "metadata1",
+    "metadata1",
+    "metadata1",
+    "metadata1",
+    "metadata1",
+    "metadata1",
+    "metadata1",
+    "metadata1",
+    "metadata1"
+  ]

@@ -31,14 +31,16 @@ RESOURCE_URI = "ui://document-viewer/mcp-app.html"
     description=(
         "Display document pages with zoomable images and ALTO text overlays. "
         "Provide paired lists: image_urls[i] pairs with alto_urls[i]. "
-        "Pages load on demand via pagination in the viewer."
+        "Empty alto_urls entries are allowed for pages without transcription. "
+        "Optionally include per-page metadata for display in the viewer."
     ),
     app=AppConfig(resource_uri=RESOURCE_URI),
 )
 async def view_document(
     image_urls: Annotated[list[str], "List of image URLs (one per page)."],
-    alto_urls: Annotated[list[str], "List of ALTO XML URLs (one per page, paired with image_urls)."],
+    alto_urls: Annotated[list[str], "List of ALTO XML URLs paired with image_urls. Use empty string for pages without ALTO."],
     ctx: Context,
+    metadata: Annotated[list[str] | None, "Per-page metadata descriptions, paired with image_urls."] = None,
 ) -> ToolResult:
     """View document pages with zoomable images and ALTO overlays."""
     if len(image_urls) != len(alto_urls):
@@ -51,10 +53,12 @@ async def view_document(
 
     has_ui = ctx.client_supports_extension(UI_EXTENSION_ID)
 
-    # Build model-visible transcription of first page
-    first_alto = fetch_and_parse_alto(alto_urls[0])
-    text_lines = first_alto.get("textLines", [])
-    transcription = "\n".join(line["transcription"] for line in text_lines)
+    # Build model-visible transcription of first page (skip if no ALTO)
+    transcription = ""
+    if alto_urls[0]:
+        first_alto = fetch_and_parse_alto(alto_urls[0])
+        text_lines = first_alto.get("textLines", [])
+        transcription = "\n".join(line["transcription"] for line in text_lines)
 
     summary_parts = [f"Displaying {len(image_urls)}-page document. Page 1 transcription:"]
     if transcription:
@@ -66,7 +70,7 @@ async def view_document(
         summary_parts.append(f"\nImage URLs:\n" + "\n".join(image_urls))
     summary = "\n".join(summary_parts)
 
-    logger.info(f"view-document: {len(image_urls)} pages, {len(text_lines)} lines on page 1")
+    logger.info(f"view-document: {len(image_urls)} pages")
     return ToolResult(
         content=[types.TextContent(type="text", text=summary)],
     )

@@ -37,6 +37,7 @@ export interface ThumbnailData {
 /** Initial payload — built from tool arguments */
 export interface ViewerData {
   pageUrls: PageUrl[];
+  pageMetadata: string[];
 }
 
 export interface TooltipState {

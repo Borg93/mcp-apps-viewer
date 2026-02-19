@@ -11,10 +11,11 @@ interface Props {
   pageData: PageData;
   pageIndex: number;
   totalPages: number;
+  pageMetadata: string;
   onPageChange: (index: number) => void;
 }
 
-let { app, pageData, pageIndex, totalPages, onPageChange }: Props = $props();
+let { app, pageData, pageIndex, totalPages, pageMetadata, onPageChange }: Props = $props();
 
 // ---------------------------------------------------------------------------
 // State
@@ -90,7 +91,7 @@ function handleHover(imgX: number, imgY: number, screenX: number, screenY: numbe
 function handleClick(imgX: number, imgY: number) {
   if (!currentPolygons.length) return;
   const hit = findHitAtImageCoord(imgX, imgY, currentPolygons);
-  if (hit) updatePageContext(hit.line);
+  if (hit) scheduleContextUpdate(hit.line);
 }
 
 /** Handle pointer leave — clear tooltip + highlight */
@@ -103,16 +104,29 @@ function handlePointerLeave() {
 }
 
 // ---------------------------------------------------------------------------
-// Model context + text selection
+// Model context + text selection (debounced, capability-checked)
 // ---------------------------------------------------------------------------
 
-async function updatePageContext(selectedLine?: TextLine) {
+let contextTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleContextUpdate(selectedLine?: TextLine) {
+  if (contextTimer) clearTimeout(contextTimer);
+  // Immediate for text selection (user clicked), debounced for page changes
+  const delay = selectedLine ? 0 : 500;
+  contextTimer = setTimeout(() => sendContextUpdate(selectedLine), delay);
+}
+
+async function sendContextUpdate(selectedLine?: TextLine) {
   if (!app) return;
+  const caps = app.getHostCapabilities();
+  if (!caps?.updateModelContext) return;
+
   const page = pageIndex + 1;
   const lines = currentAlto?.textLines ?? [];
   const fullText = lines.map(l => l.transcription).join("\n");
 
   const parts = [`Document viewer: page ${page}/${totalPages}`];
+  if (pageMetadata) parts.push(`Page metadata: ${pageMetadata}`);
   if (selectedLine) parts.push(`User selected text: "${selectedLine.transcription}"`);
   parts.push(fullText ? `Full page transcription:\n${fullText}` : "(no transcribed text on this page)");
 
@@ -144,7 +158,7 @@ $effect(() => {
     if (cancelled) return;
     if (controller) {
       controller.setImage(img);
-      updatePageContext();
+      scheduleContextUpdate();
     }
   };
   img.onerror = () => {
@@ -199,6 +213,9 @@ onDestroy(() => {
       onpointerleave={onPointerLeave}
       onwheel={onWheel}
     ></canvas>
+    {#if pageMetadata}
+      <div class="page-info">{pageMetadata}</div>
+    {/if}
   </div>
 </div>
 
@@ -229,6 +246,24 @@ onDestroy(() => {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+.page-info {
+  position: absolute;
+  bottom: var(--spacing-sm, 0.5rem);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  padding: var(--spacing-xs, 0.25rem) var(--spacing-md, 0.75rem);
+  border-radius: var(--border-radius-md, 6px);
+  font-size: var(--font-text-sm-size, 0.875rem);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 10;
+  max-width: 80%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tooltip {

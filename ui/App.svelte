@@ -56,8 +56,16 @@ onMount(async () => {
     const altoUrls = args?.alto_urls as string[] | undefined;
 
     if (imageUrls && altoUrls && imageUrls.length === altoUrls.length) {
+      const rawMetadata = args?.metadata as string[] | undefined;
+      // Normalize metadata to match page count — pad or truncate
+      const pageMetadata = Array.from(
+        { length: imageUrls.length },
+        (_, i) => rawMetadata?.[i] ?? "",
+      );
+
       viewerData = {
         pageUrls: imageUrls.map((image, i) => ({ image, alto: altoUrls[i] })),
+        pageMetadata,
       };
       error = null;
     }

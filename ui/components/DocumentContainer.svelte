@@ -19,6 +19,7 @@ let { app, data }: Props = $props();
 let currentPageIndex = $state(0);
 let totalPages = $derived(data.pageUrls.length);
 let showThumbnails = $derived(data.pageUrls.length > 1);
+let currentPageMetadata = $derived(data.pageMetadata[currentPageIndex] ?? "");
 
 // Client-side page cache (seeded lazily in the page-index effect below)
 let pageCache = new Map<number, PageData>();
@@ -124,6 +125,7 @@ $effect(() => {
       pageData={currentPage}
       pageIndex={currentPageIndex}
       {totalPages}
+      pageMetadata={currentPageMetadata}
       onPageChange={handlePageSelect}
     />
   {:else}

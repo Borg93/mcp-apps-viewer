@@ -93,11 +93,14 @@ def build_page_data(index: int, image_url: str, alto_url: str) -> tuple[dict, li
         errors.append(f"Page {index + 1} image: {e}")
         page["imageDataUrl"] = ""
 
-    try:
-        page["alto"] = fetch_and_parse_alto(alto_url)
-    except Exception as e:
-        logger.error("ALTO fetch failed for page %d: %s", index, e)
-        errors.append(f"Page {index + 1} ALTO: {e}")
+    if alto_url:
+        try:
+            page["alto"] = fetch_and_parse_alto(alto_url)
+        except Exception as e:
+            logger.error("ALTO fetch failed for page %d: %s", index, e)
+            errors.append(f"Page {index + 1} ALTO: {e}")
+            page["alto"] = {"textLines": [], "pageWidth": 0, "pageHeight": 0}
+    else:
         page["alto"] = {"textLines": [], "pageWidth": 0, "pageHeight": 0}
 
     return page, errors
