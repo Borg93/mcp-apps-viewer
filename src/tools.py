@@ -3,6 +3,7 @@ Document Viewer MCP App — Tool & resource registrations.
 
 Tools:
   - view-document: entry point, returns transcription for the model
+  - highlight-region: highlight specific text lines in the viewer (called by model)
   - load-page: fetches a single page on demand (called by View via callServerTool)
   - load-thumbnails: batch-fetches thumbnail images (called by View via callServerTool)
 """
@@ -73,6 +74,44 @@ async def view_document(
     logger.info(f"view-document: {len(image_urls)} pages")
     return ToolResult(
         content=[types.TextContent(type="text", text=summary)],
+    )
+
+
+@mcp.tool(
+    name="highlight-region",
+    description=(
+        "Highlight specific text regions in the document viewer. "
+        "Use line_ids from the model context (shown as [line-id] prefixes in the transcription) "
+        "OR use search_text to highlight all lines containing that text. "
+        "Provide at least one of line_ids or search_text."
+    ),
+    app=AppConfig(resource_uri=RESOURCE_URI),
+)
+def highlight_region(
+    page_index: Annotated[int, "Zero-based page index (shown as page_index=N in model context)."],
+    line_ids: Annotated[list[str] | None, "Line IDs from model context, e.g. ['line-P1_TL00021']. Preferred when available."] = None,
+    search_text: Annotated[str | None, "Text substring to match — highlights all lines containing this text (case-insensitive)."] = None,
+    color: Annotated[str, "Highlight color as hex string, e.g. '#ffcc00'."] = "#ffcc00",
+) -> ToolResult:
+    """Highlight text regions in the document viewer."""
+    if not line_ids and not search_text:
+        return ToolResult(
+            content=[types.TextContent(type="text", text="Error: provide line_ids or search_text.")],
+        )
+
+    logger.info(f"highlight-region: page={page_index}, line_ids={line_ids}, search_text={search_text!r}, color={color}")
+    return ToolResult(
+        content=[types.TextContent(
+            type="text",
+            text=f"Highlighted regions on page {page_index + 1}.",
+        )],
+        structured_content={
+            "action": "highlight",
+            "pageIndex": page_index,
+            "lineIds": line_ids or [],
+            "searchText": search_text,
+            "color": color,
+        },
     )
 
 

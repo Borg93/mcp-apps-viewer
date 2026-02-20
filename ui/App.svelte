@@ -9,7 +9,7 @@ import {
 } from "@modelcontextprotocol/ext-apps";
 
 import DocumentContainer from "./components/DocumentContainer.svelte";
-import type { ViewerData } from "./lib/types";
+import type { ViewerData, HighlightCommand } from "./lib/types";
 
 const CARD_HEIGHT = 300;
 const VIEWER_HEIGHT = 550;
@@ -22,6 +22,7 @@ let isStreaming = $state(false);
 let streamingMessage = $state("");
 let isFullscreen = $state(false);
 let canFullscreen = $state(false);
+let highlightCommand = $state<HighlightCommand | null>(null);
 
 let hasData = $derived(viewerData && viewerData.pageUrls.length > 0);
 let isCardState = $derived((!hasData && !isStreaming) || !!error || !app);
@@ -101,8 +102,22 @@ onMount(async () => {
   };
 
   instance.ontoolinput = (params) => {
-    isStreaming = true;
+    const toolName = (params as any).name as string | undefined;
     const args = params.arguments as Record<string, unknown>;
+
+    // Route by tool name
+    if (toolName === "highlight-region") {
+      highlightCommand = {
+        pageIndex: args.page_index as number,
+        lineIds: (args.line_ids as string[] | null) ?? [],
+        searchText: (args.search_text as string | null) ?? undefined,
+        color: (args.color as string) ?? "#ffcc00",
+      };
+      return;
+    }
+
+    // Default: view-document
+    isStreaming = true;
     const imageUrls = args?.image_urls as string[] | undefined;
     const altoUrls = args?.alto_urls as string[] | undefined;
 
@@ -127,6 +142,10 @@ onMount(async () => {
   };
 
   instance.ontoolresult = (result) => {
+    const sc = result.structuredContent as Record<string, unknown> | undefined;
+    // Highlight results don't affect streaming state
+    if (sc?.action === "highlight") return;
+
     isStreaming = false;
     if (result.isError) {
       error = result.content?.map((c: any) => ("text" in c ? c.text : "")).join(" ") ?? "Unknown error";
@@ -191,6 +210,7 @@ onDestroy(() => {
         {canFullscreen}
         {isFullscreen}
         onToggleFullscreen={toggleFullscreen}
+        {highlightCommand}
       />
     {/key}
   {:else if error}

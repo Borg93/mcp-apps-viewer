@@ -45,3 +45,12 @@ export interface TooltipState {
   x: number;
   y: number;
 }
+
+/** Command from the model to highlight specific text lines */
+export interface HighlightCommand {
+  pageIndex: number;
+  lineIds: string[];
+  /** Fallback: highlight lines containing this text (case-insensitive) */
+  searchText?: string;
+  color: string;
+}

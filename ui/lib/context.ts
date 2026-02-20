@@ -29,12 +29,12 @@ async function sendContextUpdate(state: ContextState, selectedLine?: TextLine) {
 
   const page = pageIndex + 1;
   const lines = state.getTextLines();
-  const fullText = lines.map(l => l.transcription).join("\n");
+  const fullText = lines.map(l => `[${l.id}] ${l.transcription}`).join("\n");
 
-  const parts = [`Document viewer: page ${page}/${totalPages}`];
+  const parts = [`Document viewer: page ${page}/${totalPages} (page_index=${pageIndex})`];
   if (pageMetadata) parts.push(`Page metadata: ${pageMetadata}`);
-  if (selectedLine) parts.push(`User selected text: "${selectedLine.transcription}"`);
-  parts.push(fullText ? `Full page transcription:\n${fullText}` : "(no transcribed text on this page)");
+  if (selectedLine) parts.push(`User selected text (${selectedLine.id}): "${selectedLine.transcription}"`);
+  parts.push(fullText ? `Page transcription (line IDs for highlight-region tool):\n${fullText}` : "(no transcribed text on this page)");
 
   const text = parts.join("\n");
   if (text === lastSentContext) return;

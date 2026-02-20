@@ -89,8 +89,8 @@ let showPopover = $state(false);
       title="Overlay style"
     >
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-        <circle cx="8" cy="8" r="3" stroke="currentColor" stroke-width="1.4"/>
-        <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 2.5"/>
+        <path d="M12.5 1.5l2 2-9 9L2 14l1.5-3.5z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M10.5 3.5l2 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
       </svg>
     </button>
 

@@ -1,7 +1,7 @@
 <script lang="ts">
 import { onMount, onDestroy } from "svelte";
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { TextLine, PageData, PageAltoData, TooltipState } from "../lib/types";
+import type { TextLine, PageData, PageAltoData, TooltipState, HighlightCommand } from "../lib/types";
 import type { PolygonHit } from "../lib/geometry";
 import { buildPolygonHits, findHitAtImageCoord } from "../lib/geometry";
 import { CanvasController, type Transform } from "../lib/canvas";
@@ -22,9 +22,10 @@ interface Props {
   hasThumbnails: boolean;
   showThumbnails: boolean;
   onToggleThumbnails: () => void;
+  highlightCommand?: HighlightCommand | null;
 }
 
-let { app, pageData, pageIndex, totalPages, pageMetadata, onPageChange, canFullscreen, isFullscreen, onToggleFullscreen, hasThumbnails, showThumbnails, onToggleThumbnails }: Props = $props();
+let { app, pageData, pageIndex, totalPages, pageMetadata, onPageChange, canFullscreen, isFullscreen, onToggleFullscreen, hasThumbnails, showThumbnails, onToggleThumbnails, highlightCommand = null }: Props = $props();
 
 // ---------------------------------------------------------------------------
 // State
@@ -39,6 +40,10 @@ let panelWidth = $state(280);
 let polygonColor = $state("#c15f3c");
 let polygonThickness = $state(2);
 let polygonOpacity = $state(0.15);
+
+// External highlights from model (via highlight-region tool)
+let externalHighlightIds = $state<Set<string>>(new Set());
+let externalHighlightColor = $state<string | null>(null);
 
 function hexToRgba(hex: string, alpha: number): string {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -72,7 +77,8 @@ function drawOverlays(ctx: CanvasRenderingContext2D, transform: Transform) {
   if (currentPolygons.length === 0) return;
 
   for (const p of currentPolygons) {
-    const isHighlighted = p.lineId === highlightedLineId;
+    const isHovered = p.lineId === highlightedLineId;
+    const isExternal = externalHighlightIds.has(p.lineId);
     ctx.beginPath();
     ctx.moveTo(p.points[0], p.points[1]);
     for (let i = 2; i < p.points.length; i += 2) {
@@ -80,17 +86,26 @@ function drawOverlays(ctx: CanvasRenderingContext2D, transform: Transform) {
     }
     ctx.closePath();
 
-    ctx.fillStyle = isHighlighted
-      ? hexToRgba(polygonColor, Math.min(1, polygonOpacity * 2))
-      : hexToRgba(polygonColor, polygonOpacity);
-    ctx.fill();
-    ctx.strokeStyle = isHighlighted
-      ? hexToRgba(polygonColor, 1)
-      : hexToRgba(polygonColor, Math.min(1, polygonOpacity * 5));
-    ctx.lineWidth = isHighlighted
-      ? (polygonThickness + 1) / transform.scale
-      : polygonThickness / transform.scale;
-    ctx.stroke();
+    if (isExternal && externalHighlightColor) {
+      // External highlight from model — use its dedicated color
+      ctx.fillStyle = hexToRgba(externalHighlightColor, 0.3);
+      ctx.fill();
+      ctx.strokeStyle = hexToRgba(externalHighlightColor, 1);
+      ctx.lineWidth = (polygonThickness + 1) / transform.scale;
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = isHovered
+        ? hexToRgba(polygonColor, Math.min(1, polygonOpacity * 2))
+        : hexToRgba(polygonColor, polygonOpacity);
+      ctx.fill();
+      ctx.strokeStyle = isHovered
+        ? hexToRgba(polygonColor, 1)
+        : hexToRgba(polygonColor, Math.min(1, polygonOpacity * 5));
+      ctx.lineWidth = isHovered
+        ? (polygonThickness + 1) / transform.scale
+        : polygonThickness / transform.scale;
+      ctx.stroke();
+    }
   }
 }
 
@@ -173,6 +188,29 @@ function getContextState() {
 }
 
 // ---------------------------------------------------------------------------
+// Apply external highlight commands from model
+// ---------------------------------------------------------------------------
+
+$effect(() => {
+  if (!highlightCommand || highlightCommand.pageIndex !== pageIndex) return;
+
+  let ids = highlightCommand.lineIds;
+
+  // Resolve searchText to line IDs if no explicit IDs provided
+  if (ids.length === 0 && highlightCommand.searchText) {
+    const needle = highlightCommand.searchText.toLowerCase();
+    const lines = currentAlto?.textLines ?? [];
+    ids = lines
+      .filter(l => l.transcription.toLowerCase().includes(needle))
+      .map(l => l.id);
+  }
+
+  externalHighlightIds = new Set(ids);
+  externalHighlightColor = highlightCommand.color;
+  controller?.requestDraw();
+});
+
+// ---------------------------------------------------------------------------
 // Redraw when polygon style changes
 // ---------------------------------------------------------------------------
 
@@ -193,6 +231,8 @@ $effect(() => {
   currentPolygons = currentAlto?.textLines ? buildPolygonHits(currentAlto.textLines) : [];
   highlightedLineId = null;
   tooltip = null;
+  externalHighlightIds = new Set();
+  externalHighlightColor = null;
 
   const img = new Image();
   let cancelled = false;
