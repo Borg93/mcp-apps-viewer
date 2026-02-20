@@ -111,6 +111,17 @@ export class CanvasController {
     this.draw();
   }
 
+  /** Check if an image-space point is within the visible canvas area. */
+  isPointVisible(imgX: number, imgY: number, margin = 50): boolean {
+    if (!this.canvas) return false;
+    const screenX = imgX * this.transform.scale + this.transform.x;
+    const screenY = imgY * this.transform.scale + this.transform.y;
+    const cw = this.canvas.clientWidth;
+    const ch = this.canvas.clientHeight;
+    return screenX >= margin && screenX <= cw - margin &&
+           screenY >= margin && screenY <= ch - margin;
+  }
+
   /** Pan so that the given image-space point is centered on the canvas. */
   centerOn(imgX: number, imgY: number): void {
     if (!this.canvas) return;

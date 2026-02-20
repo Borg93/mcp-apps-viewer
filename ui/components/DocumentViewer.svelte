@@ -122,7 +122,9 @@ function handlePanelLineHover(lineId: string | null) {
 function handlePanelLineClick(line: TextLine) {
   const centerX = line.hpos + line.width / 2;
   const centerY = line.vpos + line.height / 2;
-  controller?.centerOn(centerX, centerY);
+  if (!controller?.isPointVisible(centerX, centerY)) {
+    controller?.centerOn(centerX, centerY);
+  }
   scheduleContextUpdate(line);
 }
 
@@ -245,22 +247,22 @@ onDestroy(() => {
       <div class="page-info">{pageMetadata}</div>
     {/if}
 
-    {#if !showPanel && hasTextLines}
-      <button
-        class="panel-toggle"
-        onclick={() => showPanel = true}
-        title="Show transcription"
-      >
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-          <path d="M2 4h12M2 8h8M2 12h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        </svg>
-      </button>
-    {/if}
-
-    {#if showPanel && hasTextLines}
+    {#if hasTextLines}
+      {#if !showPanel}
+        <button
+          class="panel-toggle"
+          onclick={() => showPanel = true}
+          title="Show transcription"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <path d="M2 4h12M2 8h8M2 12h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+      {/if}
       <TranscriptionPanel
         {textLines}
         {highlightedLineId}
+        open={showPanel}
         onLineHover={handlePanelLineHover}
         onLineClick={handlePanelLineClick}
         onClose={() => showPanel = false}
@@ -319,7 +321,7 @@ onDestroy(() => {
 .panel-toggle {
   position: absolute;
   top: 8px;
-  left: 8px;
+  right: 8px;
   z-index: 15;
   display: flex;
   align-items: center;
