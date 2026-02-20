@@ -73,6 +73,7 @@ def fetch_and_parse_alto(url: str) -> dict:
                     "vpos": line.vpos,
                     "width": line.width,
                     "height": line.height,
+                    "confidence": line.confidence,
                 }
                 for line in data.text_lines
             ],

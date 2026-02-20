@@ -1,9 +1,8 @@
 /**
- * Polygon overlay drawing and highlight resolution — pure functions, no Svelte dependencies.
+ * Polygon overlay drawing — pure functions, no Svelte dependencies.
  */
 
 import type { PolygonHit } from "./geometry";
-import type { TextLine, HighlightCommand } from "./types";
 import type { Transform } from "./canvas";
 
 export interface PolygonStyle {
@@ -28,14 +27,11 @@ export function drawPolygonOverlays(
   polygons: PolygonHit[],
   style: PolygonStyle,
   hoveredLineId: string | null,
-  externalIds: Set<string>,
-  externalColor: string | null,
 ): void {
   if (polygons.length === 0) return;
 
   for (const p of polygons) {
     const isHovered = p.lineId === hoveredLineId;
-    const isExternal = externalIds.has(p.lineId);
 
     ctx.beginPath();
     ctx.moveTo(p.points[0], p.points[1]);
@@ -44,40 +40,16 @@ export function drawPolygonOverlays(
     }
     ctx.closePath();
 
-    if (isExternal && externalColor) {
-      ctx.fillStyle = hexToRgba(externalColor, 0.45);
-      ctx.fill();
-      ctx.strokeStyle = hexToRgba(externalColor, 1);
-      ctx.lineWidth = 3 / transform.scale;
-      ctx.stroke();
-    } else {
-      ctx.fillStyle = isHovered
-        ? hexToRgba(style.color, Math.min(1, style.opacity * 2))
-        : hexToRgba(style.color, style.opacity);
-      ctx.fill();
-      ctx.strokeStyle = isHovered
-        ? hexToRgba(style.color, 1)
-        : hexToRgba(style.color, Math.min(1, style.opacity * 5));
-      ctx.lineWidth = isHovered
-        ? (style.thickness + 1) / transform.scale
-        : style.thickness / transform.scale;
-      ctx.stroke();
-    }
+    ctx.fillStyle = isHovered
+      ? hexToRgba(style.color, Math.min(1, style.opacity * 2))
+      : hexToRgba(style.color, style.opacity);
+    ctx.fill();
+    ctx.strokeStyle = isHovered
+      ? hexToRgba(style.color, 1)
+      : hexToRgba(style.color, Math.min(1, style.opacity * 5));
+    ctx.lineWidth = isHovered
+      ? (style.thickness + 1) / transform.scale
+      : style.thickness / transform.scale;
+    ctx.stroke();
   }
-}
-
-/**
- * Resolve a HighlightCommand to concrete line IDs.
- * Uses lineIds directly if provided, otherwise falls back to text search.
- */
-export function resolveHighlightIds(
-  command: HighlightCommand,
-  textLines: TextLine[],
-): string[] {
-  if (command.lineIds.length > 0) return command.lineIds;
-  if (!command.searchText || textLines.length === 0) return [];
-  const needle = command.searchText.toLowerCase();
-  return textLines
-    .filter(l => l.transcription.toLowerCase().includes(needle))
-    .map(l => l.id);
 }

@@ -1,10 +1,10 @@
 <script lang="ts">
 import { onMount, onDestroy } from "svelte";
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { TextLine, PageData, TooltipState, HighlightCommand } from "../lib/types";
+import type { TextLine, PageData, TooltipState } from "../lib/types";
 import { buildPolygonHits, findHitAtImageCoord } from "../lib/geometry";
 import { CanvasController } from "../lib/canvas";
-import { drawPolygonOverlays, resolveHighlightIds } from "../lib/overlays";
+import { drawPolygonOverlays } from "../lib/overlays";
 import TranscriptionPanel from "./TranscriptionPanel.svelte";
 import CanvasToolbar from "./CanvasToolbar.svelte";
 import { scheduleContextUpdate, resetContextState } from "../lib/context";
@@ -21,10 +21,9 @@ interface Props {
   hasThumbnails: boolean;
   showThumbnails: boolean;
   onToggleThumbnails: () => void;
-  highlightCommand?: HighlightCommand | null;
 }
 
-let { app, pageData, pageIndex, totalPages, pageMetadata, canFullscreen, isFullscreen, onToggleFullscreen, hasThumbnails, showThumbnails, onToggleThumbnails, highlightCommand = null }: Props = $props();
+let { app, pageData, pageIndex, totalPages, pageMetadata, canFullscreen, isFullscreen, onToggleFullscreen, hasThumbnails, showThumbnails, onToggleThumbnails }: Props = $props();
 
 // ---------------------------------------------------------------------------
 // State
@@ -39,10 +38,6 @@ let panelWidth = $state(280);
 let polygonColor = $state("#c15f3c");
 let polygonThickness = $state(2);
 let polygonOpacity = $state(0.15);
-
-// External highlights from model (via highlight-region tool)
-let externalHighlightIds = $state<Set<string>>(new Set());
-let externalHighlightColor = $state<string | null>(null);
 
 let textLines = $derived(pageData?.alto?.textLines ?? []);
 let hasTextLines = $derived(textLines.length > 0);
@@ -64,7 +59,7 @@ function drawOverlays(ctx: CanvasRenderingContext2D, transform: import("../lib/c
   drawPolygonOverlays(
     ctx, transform, currentPolygons,
     { color: polygonColor, thickness: polygonThickness, opacity: polygonOpacity },
-    highlightedLineId, externalHighlightIds, externalHighlightColor,
+    highlightedLineId,
   );
 }
 
@@ -147,22 +142,6 @@ function getContextState() {
 }
 
 // ---------------------------------------------------------------------------
-// Apply external highlight commands from model
-// ---------------------------------------------------------------------------
-
-$effect(() => {
-  if (!highlightCommand || highlightCommand.pageIndex !== pageIndex) return;
-
-  // Depend on textLines so this re-runs after page data loads
-  const ids = resolveHighlightIds(highlightCommand, textLines);
-  if (ids.length === 0) return;
-
-  externalHighlightIds = new Set(ids);
-  externalHighlightColor = highlightCommand.color;
-  controller?.requestDraw();
-});
-
-// ---------------------------------------------------------------------------
 // Redraw when polygon style changes
 // ---------------------------------------------------------------------------
 
@@ -181,8 +160,6 @@ $effect(() => {
 
   highlightedLineId = null;
   tooltip = null;
-  externalHighlightIds = new Set();
-  externalHighlightColor = null;
 
   const img = new Image();
   let cancelled = false;

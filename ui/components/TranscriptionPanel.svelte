@@ -77,7 +77,16 @@ $effect(() => {
         onpointerleave={() => onLineHover(null)}
         onclick={() => onLineClick(line)}
       >
-        {line.transcription}
+        <span class="line-text">{line.transcription}</span>
+        {#if line.confidence != null}
+          <span
+            class="confidence-badge"
+            class:low={line.confidence < 0.7}
+            class:medium={line.confidence >= 0.7 && line.confidence < 0.9}
+            class:high={line.confidence >= 0.9}
+            title={line.confidence.toFixed(2)}
+          >{line.confidence.toFixed(2)}</span>
+        {/if}
       </button>
     {/each}
     {#if textLines.length === 0}
@@ -148,7 +157,9 @@ $effect(() => {
 }
 
 .line-item {
-  display: block;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   width: 100%;
   padding: var(--spacing-xs, 0.25rem) var(--spacing-sm, 0.5rem);
   font: inherit;
@@ -161,6 +172,36 @@ $effect(() => {
   border-left: 2px solid transparent;
   cursor: pointer;
   transition: background 0.1s, border-color 0.1s;
+}
+
+.line-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.confidence-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: 3px;
+  line-height: 1.3;
+  opacity: 0.7;
+}
+
+.confidence-badge.high {
+  color: light-dark(#15803d, #86efac);
+  background: light-dark(rgba(21, 128, 61, 0.1), rgba(134, 239, 172, 0.1));
+}
+
+.confidence-badge.medium {
+  color: light-dark(#a16207, #fcd34d);
+  background: light-dark(rgba(161, 98, 7, 0.1), rgba(252, 211, 77, 0.1));
+}
+
+.confidence-badge.low {
+  color: light-dark(#dc2626, #fca5a5);
+  background: light-dark(rgba(220, 38, 38, 0.1), rgba(252, 165, 165, 0.1));
 }
 
 .line-item:hover,

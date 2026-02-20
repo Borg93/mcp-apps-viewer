@@ -9,6 +9,7 @@ class TextLine(BaseModel):
     vpos: int
     width: int
     height: int
+    confidence: float | None = None
 
 
 class AltoData(BaseModel):

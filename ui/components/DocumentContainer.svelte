@@ -1,6 +1,6 @@
 <script lang="ts">
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { ViewerData, PageData, HighlightCommand } from "../lib/types";
+import type { ViewerData, PageData } from "../lib/types";
 import { parsePageResult } from "../lib/utils";
 import DocumentViewer from "./DocumentViewer.svelte";
 import ThumbnailStrip from "./ThumbnailStrip.svelte";
@@ -11,10 +11,9 @@ interface Props {
   canFullscreen: boolean;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
-  highlightCommand?: HighlightCommand | null;
 }
 
-let { app, data, canFullscreen, isFullscreen, onToggleFullscreen, highlightCommand = null }: Props = $props();
+let { app, data, canFullscreen, isFullscreen, onToggleFullscreen }: Props = $props();
 
 // ---------------------------------------------------------------------------
 // State
@@ -102,16 +101,6 @@ function prefetchAdjacentPages(index: number) {
 }
 
 // ---------------------------------------------------------------------------
-// Navigate to highlighted page when a highlight command arrives
-// ---------------------------------------------------------------------------
-
-$effect(() => {
-  if (highlightCommand && highlightCommand.pageIndex !== currentPageIndex) {
-    currentPageIndex = highlightCommand.pageIndex;
-  }
-});
-
-// ---------------------------------------------------------------------------
 // Watch page index changes
 // ---------------------------------------------------------------------------
 
@@ -149,7 +138,6 @@ $effect(() => {
       {hasThumbnails}
       {showThumbnails}
       onToggleThumbnails={() => showThumbnails = !showThumbnails}
-      {highlightCommand}
     />
   {:else}
     <div class="page-loading">

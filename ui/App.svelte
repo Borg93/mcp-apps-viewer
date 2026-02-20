@@ -9,7 +9,7 @@ import {
 } from "@modelcontextprotocol/ext-apps";
 
 import DocumentContainer from "./components/DocumentContainer.svelte";
-import type { ViewerData, HighlightCommand } from "./lib/types";
+import type { ViewerData } from "./lib/types";
 
 const CARD_HEIGHT = 300;
 const VIEWER_HEIGHT = 550;
@@ -22,10 +22,13 @@ let isStreaming = $state(false);
 let streamingMessage = $state("");
 let isFullscreen = $state(false);
 let canFullscreen = $state(false);
-let highlightCommand = $state<HighlightCommand | null>(null);
 
 let hasData = $derived(viewerData && viewerData.pageUrls.length > 0);
 let isCardState = $derived((!hasData && !isStreaming) || !!error || !app);
+
+// Separate container dimensions tracking (avoids feedback loop with hostContext)
+let containerDims = $state<Record<string, number> | undefined>();
+let lastSentHeight = 0;
 
 $effect(() => {
   if (hostContext?.theme) applyDocumentTheme(hostContext.theme);
@@ -43,7 +46,7 @@ $effect(() => {
   }
 });
 
-// Adapt sizing per containerDimensions spec — skip in fullscreen (host controls size)
+// Adapt sizing — reads only stable derived values to avoid feedback loops.
 $effect(() => {
   if (!app) return;
 
@@ -53,20 +56,21 @@ $effect(() => {
   }
 
   const desired = (isCardState && !isStreaming) ? CARD_HEIGHT : VIEWER_HEIGHT;
-  const dims = hostContext?.containerDimensions as Record<string, number> | undefined;
 
-  if (dims && "height" in dims) {
+  if (containerDims && "height" in containerDims) {
     document.documentElement.style.height = "100vh";
     return;
   }
 
-  document.documentElement.style.height = "";
+  const maxH = containerDims?.maxHeight;
+  const targetHeight = maxH ? Math.min(desired, maxH) : desired;
 
-  if (dims && "maxHeight" in dims && dims.maxHeight) {
-    setTimeout(() => app?.sendSizeChanged({ height: Math.min(desired, dims.maxHeight) }), 50);
-  } else {
-    setTimeout(() => app?.sendSizeChanged({ height: desired }), 50);
-  }
+  // Only send if height actually changed
+  if (targetHeight === lastSentHeight) return;
+
+  document.documentElement.style.height = "";
+  lastSentHeight = targetHeight;
+  setTimeout(() => app?.sendSizeChanged({ height: targetHeight }), 50);
 });
 
 async function toggleFullscreen() {
@@ -106,7 +110,6 @@ onMount(async () => {
     const imageUrls = args?.image_urls as string[] | undefined;
     const altoUrls = args?.alto_urls as string[] | undefined;
 
-    // Only handle view-document (highlight-region handled in ontoolresult via structuredContent)
     if (!imageUrls || !altoUrls || imageUrls.length !== altoUrls.length) return;
 
     isStreaming = true;
@@ -125,19 +128,6 @@ onMount(async () => {
   };
 
   instance.ontoolresult = (result) => {
-    const sc = result.structuredContent as Record<string, unknown> | undefined;
-
-    // Apply highlight from structured_content (most reliable path)
-    if (sc?.action === "highlight") {
-      highlightCommand = {
-        pageIndex: sc.pageIndex as number,
-        lineIds: (sc.lineIds as string[]) ?? [],
-        searchText: (sc.searchText as string | undefined) ?? undefined,
-        color: (sc.color as string) ?? "#3b82f6",
-      };
-      return;
-    }
-
     isStreaming = false;
     if (result.isError) {
       error = result.content?.map((c: any) => ("text" in c ? c.text : "")).join(" ") ?? "Unknown error";
@@ -156,11 +146,16 @@ onMount(async () => {
 
   instance.onhostcontextchanged = (params) => {
     hostContext = { ...hostContext, ...params };
+    // Track containerDimensions separately to avoid feedback loops in sizing effect
+    if (params.containerDimensions !== undefined) {
+      containerDims = params.containerDimensions as Record<string, number> | undefined;
+    }
   };
 
   await instance.connect();
   app = instance;
   hostContext = instance.getHostContext();
+  containerDims = hostContext?.containerDimensions as Record<string, number> | undefined;
 });
 
 onDestroy(() => {
@@ -202,7 +197,6 @@ onDestroy(() => {
         {canFullscreen}
         {isFullscreen}
         onToggleFullscreen={toggleFullscreen}
-        {highlightCommand}
       />
     {/key}
   {:else if error}

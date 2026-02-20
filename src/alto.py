@@ -52,8 +52,18 @@ def parse_alto_xml(xml_string: str) -> AltoData:
         polygon_match = re.search(r'<Polygon[^>]*POINTS="([^"]*)"', line_content)
         polygon = polygon_match.group(1) if polygon_match else ""
 
-        words = re.findall(r'<String[^>]*CONTENT="([^"]*)"', line_content)
-        transcription = " ".join(words)
+        word_matches = re.findall(r'<String[^>]*?CONTENT="([^"]*)"[^>]*>', line_content)
+        wc_matches = re.findall(r'<String[^>]*?WC="([^"]*)"[^>]*>', line_content)
+        transcription = " ".join(word_matches)
+
+        # Compute line confidence as average of word WC values
+        line_confidence: float | None = None
+        if wc_matches:
+            try:
+                wc_values = [float(w) for w in wc_matches]
+                line_confidence = sum(wc_values) / len(wc_values)
+            except (ValueError, ZeroDivisionError):
+                line_confidence = None
 
         if not polygon:
             skipped_no_polygon += 1
@@ -70,6 +80,7 @@ def parse_alto_xml(xml_string: str) -> AltoData:
                     vpos=vpos,
                     width=width,
                     height=height,
+                    confidence=line_confidence,
                 )
             )
             transcription_lines.append(transcription)
