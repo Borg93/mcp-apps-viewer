@@ -53,7 +53,6 @@ async def view_document(
 
     has_ui = ctx.client_supports_extension(UI_EXTENSION_ID)
 
-    # Build model-visible transcription of first page (skip if no ALTO)
     transcription = ""
     if alto_urls[0]:
         first_alto = fetch_and_parse_alto(alto_urls[0])
@@ -74,7 +73,6 @@ async def view_document(
     return ToolResult(
         content=[types.TextContent(type="text", text=summary)],
     )
-
 
 
 @mcp.tool(

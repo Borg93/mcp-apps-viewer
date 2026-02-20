@@ -18,10 +18,21 @@ import httpx
 from fastmcp.telemetry import get_tracer
 from PIL import Image
 
-from src.parser import detect_and_parse, fetch_alto_xml_from_url
+from src.parser import detect_and_parse
 
 logger = logging.getLogger(__name__)
 tracer = get_tracer()
+
+_EMPTY_ALTO: dict = {"textLines": [], "pageWidth": 0, "pageHeight": 0}
+
+
+def fetch_xml_from_url(url: str) -> str:
+    """Fetch XML (ALTO or PAGE) from a URL."""
+    logger.debug("Fetching XML: %s", url)
+    response = httpx.get(url, timeout=30.0)
+    response.raise_for_status()
+    logger.debug("XML fetched: status=%d, length=%d", response.status_code, len(response.text))
+    return response.text
 
 
 @lru_cache(maxsize=32)
@@ -59,24 +70,12 @@ def fetch_thumbnail_as_data_url(url: str, max_width: int = 150) -> str:
 
 @lru_cache(maxsize=32)
 def fetch_and_parse_alto(url: str) -> dict:
-    """Fetch ALTO XML and parse into structured text line data. Cached by URL."""
+    """Fetch ALTO/PAGE XML and parse into structured text line data. Cached by URL."""
     with tracer.start_as_current_span("fetch_alto", attributes={"url": url}):
-        xml = fetch_alto_xml_from_url(url)
+        xml = fetch_xml_from_url(url)
         data = detect_and_parse(xml)
         return {
-            "textLines": [
-                {
-                    "id": line.id,
-                    "polygon": line.polygon,
-                    "transcription": line.transcription,
-                    "hpos": line.hpos,
-                    "vpos": line.vpos,
-                    "width": line.width,
-                    "height": line.height,
-                    "confidence": line.confidence,
-                }
-                for line in data.text_lines
-            ],
+            "textLines": [line.model_dump() for line in data.text_lines],
             "pageWidth": data.page_width,
             "pageHeight": data.page_height,
         }
@@ -99,9 +98,8 @@ def build_page_data(index: int, image_url: str, alto_url: str) -> tuple[dict, li
             page["alto"] = fetch_and_parse_alto(alto_url)
         except Exception as e:
             logger.error("ALTO fetch failed for page %d: %s", index, e)
-            errors.append(f"Page {index + 1} ALTO: {e}")
-            page["alto"] = {"textLines": [], "pageWidth": 0, "pageHeight": 0}
+            page["alto"] = _EMPTY_ALTO
     else:
-        page["alto"] = {"textLines": [], "pageWidth": 0, "pageHeight": 0}
+        page["alto"] = _EMPTY_ALTO
 
     return page, errors
