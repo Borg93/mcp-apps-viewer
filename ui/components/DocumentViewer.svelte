@@ -311,8 +311,8 @@ onDestroy(() => {
 
 .page-indicator,
 .page-info {
-  background: light-dark(rgba(0, 0, 0, 0.04), rgba(255, 255, 255, 0.05));
-  color: var(--color-text-tertiary, light-dark(#999, #666));
+  background: light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.1));
+  color: var(--color-text-secondary, light-dark(#5c5c5c, #a8a6a3));
   padding: 2px 8px;
   border-radius: var(--border-radius-sm, 4px);
   font-size: var(--font-text-xs-size, 0.75rem);
