@@ -46,18 +46,6 @@ export function findHitAtImageCoord(
   return null;
 }
 
-/** Convert screen (canvas-relative) coords to image pixel coords */
-export function screenToImage(
-  sx: number,
-  sy: number,
-  transform: { x: number; y: number; scale: number },
-): { x: number; y: number } {
-  return {
-    x: (sx - transform.x) / transform.scale,
-    y: (sy - transform.y) / transform.scale,
-  };
-}
-
 /** Build PolygonHit array from ALTO text lines (filters lines with <6 polygon points) */
 export function buildPolygonHits(textLines: TextLine[]): PolygonHit[] {
   const hits: PolygonHit[] = [];

@@ -68,7 +68,7 @@ async def view_document(
         summary_parts.append("(no transcribed text on this page)")
 
     if not has_ui:
-        summary_parts.append(f"\nImage URLs:\n" + "\n".join(image_urls))
+        summary_parts.append("\nImage URLs:\n" + "\n".join(image_urls))
     summary = "\n".join(summary_parts)
 
     logger.info(f"view-document: {len(image_urls)} pages")
@@ -91,7 +91,7 @@ def highlight_region(
     page_index: Annotated[int, "Zero-based page index (shown as page_index=N in model context)."],
     line_ids: Annotated[list[str] | None, "Line IDs from model context, e.g. ['line-P1_TL00021']. Preferred when available."] = None,
     search_text: Annotated[str | None, "Text substring to match — highlights all lines containing this text (case-insensitive)."] = None,
-    color: Annotated[str, "Highlight color as hex string, e.g. '#ffcc00'."] = "#ffcc00",
+    color: Annotated[str, "Highlight color as hex string, e.g. '#3b82f6'."] = "#3b82f6",
 ) -> ToolResult:
     """Highlight text regions in the document viewer."""
     if not line_ids and not search_text:

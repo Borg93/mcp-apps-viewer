@@ -1,10 +1,10 @@
 <script lang="ts">
 import { onMount, onDestroy } from "svelte";
 import type { App } from "@modelcontextprotocol/ext-apps";
-import type { TextLine, PageData, PageAltoData, TooltipState, HighlightCommand } from "../lib/types";
-import type { PolygonHit } from "../lib/geometry";
+import type { TextLine, PageData, TooltipState, HighlightCommand } from "../lib/types";
 import { buildPolygonHits, findHitAtImageCoord } from "../lib/geometry";
-import { CanvasController, type Transform } from "../lib/canvas";
+import { CanvasController } from "../lib/canvas";
+import { drawPolygonOverlays, resolveHighlightIds } from "../lib/overlays";
 import TranscriptionPanel from "./TranscriptionPanel.svelte";
 import CanvasToolbar from "./CanvasToolbar.svelte";
 import { scheduleContextUpdate, resetContextState } from "../lib/context";
@@ -15,7 +15,6 @@ interface Props {
   pageIndex: number;
   totalPages: number;
   pageMetadata: string;
-  onPageChange: (index: number) => void;
   canFullscreen: boolean;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
@@ -25,7 +24,7 @@ interface Props {
   highlightCommand?: HighlightCommand | null;
 }
 
-let { app, pageData, pageIndex, totalPages, pageMetadata, onPageChange, canFullscreen, isFullscreen, onToggleFullscreen, hasThumbnails, showThumbnails, onToggleThumbnails, highlightCommand = null }: Props = $props();
+let { app, pageData, pageIndex, totalPages, pageMetadata, canFullscreen, isFullscreen, onToggleFullscreen, hasThumbnails, showThumbnails, onToggleThumbnails, highlightCommand = null }: Props = $props();
 
 // ---------------------------------------------------------------------------
 // State
@@ -45,26 +44,14 @@ let polygonOpacity = $state(0.15);
 let externalHighlightIds = $state<Set<string>>(new Set());
 let externalHighlightColor = $state<string | null>(null);
 
-function hexToRgba(hex: string, alpha: number): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
 let textLines = $derived(pageData?.alto?.textLines ?? []);
 let hasTextLines = $derived(textLines.length > 0);
+let currentPolygons = $derived(textLines.length > 0 ? buildPolygonHits(textLines) : []);
 
 // Canvas element refs
 let canvasEl: HTMLCanvasElement;
 let containerEl: HTMLDivElement;
 let wrapperEl: HTMLDivElement;
-
-// Current page ALTO data
-let currentAlto: PageAltoData | null = null;
-
-// Parsed polygon data for hit testing (image coordinates)
-let currentPolygons: PolygonHit[] = [];
 
 let controller: CanvasController;
 
@@ -73,40 +60,12 @@ let controller: CanvasController;
 // ---------------------------------------------------------------------------
 
 /** Draw polygon overlays in image space (called by CanvasController after drawing the image) */
-function drawOverlays(ctx: CanvasRenderingContext2D, transform: Transform) {
-  if (currentPolygons.length === 0) return;
-
-  for (const p of currentPolygons) {
-    const isHovered = p.lineId === highlightedLineId;
-    const isExternal = externalHighlightIds.has(p.lineId);
-    ctx.beginPath();
-    ctx.moveTo(p.points[0], p.points[1]);
-    for (let i = 2; i < p.points.length; i += 2) {
-      ctx.lineTo(p.points[i], p.points[i + 1]);
-    }
-    ctx.closePath();
-
-    if (isExternal && externalHighlightColor) {
-      // External highlight from model — use its dedicated color
-      ctx.fillStyle = hexToRgba(externalHighlightColor, 0.3);
-      ctx.fill();
-      ctx.strokeStyle = hexToRgba(externalHighlightColor, 1);
-      ctx.lineWidth = (polygonThickness + 1) / transform.scale;
-      ctx.stroke();
-    } else {
-      ctx.fillStyle = isHovered
-        ? hexToRgba(polygonColor, Math.min(1, polygonOpacity * 2))
-        : hexToRgba(polygonColor, polygonOpacity);
-      ctx.fill();
-      ctx.strokeStyle = isHovered
-        ? hexToRgba(polygonColor, 1)
-        : hexToRgba(polygonColor, Math.min(1, polygonOpacity * 5));
-      ctx.lineWidth = isHovered
-        ? (polygonThickness + 1) / transform.scale
-        : polygonThickness / transform.scale;
-      ctx.stroke();
-    }
-  }
+function drawOverlays(ctx: CanvasRenderingContext2D, transform: import("../lib/canvas").Transform) {
+  drawPolygonOverlays(
+    ctx, transform, currentPolygons,
+    { color: polygonColor, thickness: polygonThickness, opacity: polygonOpacity },
+    highlightedLineId, externalHighlightIds, externalHighlightColor,
+  );
 }
 
 /** Handle hover — hit test polygons, set tooltip + highlight, return cursor */
@@ -183,7 +142,7 @@ function getContextState() {
     pageIndex,
     totalPages,
     pageMetadata,
-    getTextLines: () => currentAlto?.textLines ?? [],
+    getTextLines: () => pageData?.alto?.textLines ?? [],
   };
 }
 
@@ -194,16 +153,9 @@ function getContextState() {
 $effect(() => {
   if (!highlightCommand || highlightCommand.pageIndex !== pageIndex) return;
 
-  let ids = highlightCommand.lineIds;
-
-  // Resolve searchText to line IDs if no explicit IDs provided
-  if (ids.length === 0 && highlightCommand.searchText) {
-    const needle = highlightCommand.searchText.toLowerCase();
-    const lines = currentAlto?.textLines ?? [];
-    ids = lines
-      .filter(l => l.transcription.toLowerCase().includes(needle))
-      .map(l => l.id);
-  }
+  // Depend on textLines so this re-runs after page data loads
+  const ids = resolveHighlightIds(highlightCommand, textLines);
+  if (ids.length === 0) return;
 
   externalHighlightIds = new Set(ids);
   externalHighlightColor = highlightCommand.color;
@@ -227,8 +179,6 @@ $effect(() => {
 $effect(() => {
   const pd = pageData;
 
-  currentAlto = pd.alto;
-  currentPolygons = currentAlto?.textLines ? buildPolygonHits(currentAlto.textLines) : [];
   highlightedLineId = null;
   tooltip = null;
   externalHighlightIds = new Set();
@@ -254,7 +204,7 @@ $effect(() => {
     cancelled = true;
     img.onload = null;
     img.onerror = null;
-    img.src = "";  // Abort any in-progress load
+    img.src = "";
   };
 });
 

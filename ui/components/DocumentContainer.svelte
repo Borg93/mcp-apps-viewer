@@ -143,7 +143,6 @@ $effect(() => {
       pageIndex={currentPageIndex}
       {totalPages}
       pageMetadata={currentPageMetadata}
-      onPageChange={handlePageSelect}
       {canFullscreen}
       {isFullscreen}
       {onToggleFullscreen}

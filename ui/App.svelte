@@ -95,56 +95,48 @@ onMount(async () => {
     { autoResize: false },
   );
 
-  instance.ontoolinputpartial = (params) => {
+  instance.ontoolinputpartial = () => {
     if (!viewerData) {
       isStreaming = true;
     }
   };
 
   instance.ontoolinput = (params) => {
-    const toolName = (params as any).name as string | undefined;
     const args = params.arguments as Record<string, unknown>;
-
-    // Route by tool name
-    if (toolName === "highlight-region") {
-      highlightCommand = {
-        pageIndex: args.page_index as number,
-        lineIds: (args.line_ids as string[] | null) ?? [],
-        searchText: (args.search_text as string | null) ?? undefined,
-        color: (args.color as string) ?? "#ffcc00",
-      };
-      return;
-    }
-
-    // Default: view-document
-    isStreaming = true;
     const imageUrls = args?.image_urls as string[] | undefined;
     const altoUrls = args?.alto_urls as string[] | undefined;
 
-    if (imageUrls && altoUrls && imageUrls.length === altoUrls.length) {
-      const rawMetadata = args?.metadata as string[] | undefined;
-      const pageMetadata = Array.from(
-        { length: imageUrls.length },
-        (_, i) => rawMetadata?.[i] ?? "",
-      );
+    // Only handle view-document (highlight-region handled in ontoolresult via structuredContent)
+    if (!imageUrls || !altoUrls || imageUrls.length !== altoUrls.length) return;
 
-      viewerData = {
-        pageUrls: imageUrls.map((image, i) => ({ image, alto: altoUrls[i] })),
-        pageMetadata,
-      };
-      error = null;
-    }
+    isStreaming = true;
+    const rawMetadata = args?.metadata as string[] | undefined;
+    const pageMetadata = Array.from(
+      { length: imageUrls.length },
+      (_, i) => rawMetadata?.[i] ?? "",
+    );
 
-    const pageCount = imageUrls?.length;
-    streamingMessage = pageCount
-      ? `Loading ${pageCount} page document...`
-      : "Loading document...";
+    viewerData = {
+      pageUrls: imageUrls.map((image, i) => ({ image, alto: altoUrls[i] })),
+      pageMetadata,
+    };
+    error = null;
+    streamingMessage = `Loading ${imageUrls.length} page document...`;
   };
 
   instance.ontoolresult = (result) => {
     const sc = result.structuredContent as Record<string, unknown> | undefined;
-    // Highlight results don't affect streaming state
-    if (sc?.action === "highlight") return;
+
+    // Apply highlight from structured_content (most reliable path)
+    if (sc?.action === "highlight") {
+      highlightCommand = {
+        pageIndex: sc.pageIndex as number,
+        lineIds: (sc.lineIds as string[]) ?? [],
+        searchText: (sc.searchText as string | undefined) ?? undefined,
+        color: (sc.color as string) ?? "#3b82f6",
+      };
+      return;
+    }
 
     isStreaming = false;
     if (result.isError) {
