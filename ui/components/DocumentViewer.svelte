@@ -8,6 +8,7 @@ import { drawPolygonOverlays } from "../lib/overlays";
 import TranscriptionPanel from "./TranscriptionPanel.svelte";
 import CanvasToolbar from "./CanvasToolbar.svelte";
 import { scheduleContextUpdate, resetContextState } from "../lib/context";
+import { POLYGON_DEFAULTS } from "../lib/constants";
 
 interface Props {
   app: App;
@@ -39,9 +40,9 @@ let showPanel = $state(false);
 let panelWidth = $state(280);
 
 // Polygon style controls
-let polygonColor = $state("#c15f3c");
-let polygonThickness = $state(2);
-let polygonOpacity = $state(0.15);
+let polygonColor = $state(POLYGON_DEFAULTS.color);
+let polygonThickness = $state(POLYGON_DEFAULTS.thickness);
+let polygonOpacity = $state(POLYGON_DEFAULTS.opacity);
 
 let textLines = $derived(pageData?.alto?.textLines ?? []);
 let hasTextLines = $derived(textLines.length > 0);

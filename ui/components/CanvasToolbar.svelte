@@ -1,5 +1,6 @@
 <script lang="ts">
 import PolygonStylePopover from "./PolygonStylePopover.svelte";
+import { POLYGON_DEFAULTS } from "../lib/constants";
 
 interface Props {
   showTranscription: boolean;
@@ -31,9 +32,9 @@ let {
   onResetView,
   onToggleFullscreen,
   onToggleThumbnails,
-  polygonColor = "#c15f3c",
-  polygonThickness = 2,
-  polygonOpacity = 0.15,
+  polygonColor = POLYGON_DEFAULTS.color,
+  polygonThickness = POLYGON_DEFAULTS.thickness,
+  polygonOpacity = POLYGON_DEFAULTS.opacity,
   onPolygonStyleChange,
 }: Props = $props();
 

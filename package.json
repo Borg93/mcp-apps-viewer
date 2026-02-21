@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^1.0.0",
+    "lru-cache": "^11.2.6",
     "svelte": "^5.0.0"
   },
   "devDependencies": {

@@ -70,7 +70,8 @@ $effect(() => {
 
   document.documentElement.style.height = "";
   lastSentHeight = targetHeight;
-  setTimeout(() => app?.sendSizeChanged({ height: targetHeight }), 50);
+  const timerId = setTimeout(() => app?.sendSizeChanged({ height: targetHeight }), 50);
+  return () => clearTimeout(timerId);
 });
 
 async function toggleFullscreen() {

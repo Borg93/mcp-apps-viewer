@@ -1,7 +1,8 @@
 <script lang="ts">
-import { onMount, onDestroy } from "svelte";
+import { onDestroy } from "svelte";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { ViewerData } from "../lib/types";
+import { resizeHandle } from "../lib/resize";
 import { parseThumbnailResult } from "../lib/utils";
 
 interface Props {
@@ -30,42 +31,55 @@ let loadedIndices = $state(new Set<number>());
 // Container ref for scrolling
 let containerEl: HTMLDivElement;
 
-// Refs for placeholder elements (for IntersectionObserver)
-let placeholderEls: HTMLDivElement[] = [];
-
 // Batch loading state
 let pendingIndices = new Set<number>();
-let requestedIndices = new Set<number>(); // tracks all requested indices to prevent duplicates
+let inFlightIndices = new Set<number>();
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let batchInFlight = false;
 let batchQueue: number[] = [];
 let destroyed = false;
 
-// Drag-resize state
 let resizing = $state(false);
-let dragStartX = 0;
-let dragStartWidth = 0;
 
-function onHandlePointerDown(e: PointerEvent) {
-  e.preventDefault();
-  resizing = true;
-  dragStartX = e.clientX;
-  dragStartWidth = width;
-  (e.target as HTMLElement).setPointerCapture(e.pointerId);
+// ---------------------------------------------------------------------------
+// Virtual list
+// ---------------------------------------------------------------------------
+
+const ITEM_HEIGHT = 155;
+const BUFFER = 5;
+
+let scrollTop = $state(0);
+let containerHeight = $state(0);
+
+let startIndex = $derived(Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - BUFFER));
+let endIndex = $derived(Math.min(totalPages, Math.ceil((scrollTop + containerHeight) / ITEM_HEIGHT) + BUFFER));
+let visibleIndices = $derived(Array.from({ length: endIndex - startIndex }, (_, i) => startIndex + i));
+let topSpacerHeight = $derived(startIndex * ITEM_HEIGHT);
+let bottomSpacerHeight = $derived(Math.max(0, (totalPages - endIndex) * ITEM_HEIGHT));
+
+// RAF-throttled scroll handler
+let scrollRafId = 0;
+
+function handleScroll() {
+  if (scrollRafId) return;
+  scrollRafId = requestAnimationFrame(() => {
+    scrollRafId = 0;
+    if (!containerEl) return;
+    scrollTop = containerEl.scrollTop;
+    containerHeight = containerEl.clientHeight;
+    triggerThumbnailLoads();
+  });
 }
 
-function onHandlePointerMove(e: PointerEvent) {
-  if (!resizing) return;
-  // Dragging right = increasing width (handle is on right edge)
-  const delta = e.clientX - dragStartX;
-  const newWidth = Math.max(80, Math.min(250, dragStartWidth + delta));
-  onWidthChange?.(newWidth);
-}
-
-function onHandlePointerUp(e: PointerEvent) {
-  if (!resizing) return;
-  resizing = false;
-  (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+function triggerThumbnailLoads() {
+  let added = false;
+  for (let i = startIndex; i < endIndex; i++) {
+    if (!thumbnailCache.has(i) && !inFlightIndices.has(i)) {
+      pendingIndices.add(i);
+      added = true;
+    }
+  }
+  if (added) scheduleBatch();
 }
 
 // ---------------------------------------------------------------------------
@@ -75,6 +89,8 @@ function onHandlePointerUp(e: PointerEvent) {
 async function fetchBatch(indices: number[]) {
   if (indices.length === 0 || destroyed) return;
   batchInFlight = true;
+
+  for (const i of indices) inFlightIndices.add(i);
 
   try {
     const imageUrls = indices.map(i => data.pageUrls[i].image);
@@ -100,6 +116,7 @@ async function fetchBatch(indices: number[]) {
   } catch (e) {
     console.error("load-thumbnails failed:", e);
   } finally {
+    for (const i of indices) inFlightIndices.delete(i);
     batchInFlight = false;
     if (destroyed) return;
     // Process queued batch if any
@@ -113,14 +130,13 @@ async function fetchBatch(indices: number[]) {
 function scheduleBatch() {
   if (debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
-    // Filter out already-requested indices
-    const indices = Array.from(pendingIndices).filter(i => !requestedIndices.has(i));
+    const indices = Array.from(pendingIndices).filter(i => !thumbnailCache.has(i) && !inFlightIndices.has(i));
     pendingIndices.clear();
 
     if (indices.length === 0) return;
 
-    // Mark all as requested
-    for (const i of indices) requestedIndices.add(i);
+    // Clear stale queue — only current-viewport indices matter
+    batchQueue.length = 0;
 
     // Take first 8 for immediate fetch, queue the rest
     const batch = indices.slice(0, 8);
@@ -139,67 +155,56 @@ function scheduleBatch() {
 }
 
 // ---------------------------------------------------------------------------
-// IntersectionObserver
-// ---------------------------------------------------------------------------
-
-let observer: IntersectionObserver | null = null;
-
-function setupObserver() {
-  if (destroyed) return;
-
-  observer = new IntersectionObserver(
-    (entries) => {
-      let added = false;
-      for (const entry of entries) {
-        if (!entry.isIntersecting) continue;
-        const index = Number((entry.target as HTMLElement).dataset.index);
-        if (isNaN(index) || thumbnailCache.has(index) || requestedIndices.has(index)) continue;
-        pendingIndices.add(index);
-        added = true;
-      }
-      if (added) scheduleBatch();
-    },
-    {
-      root: containerEl,
-      rootMargin: "200px",
-    }
-  );
-
-  for (const el of placeholderEls) {
-    if (el) observer.observe(el);
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Auto-scroll to active thumbnail
 // ---------------------------------------------------------------------------
 
 $effect(() => {
   const idx = currentPageIndex;
-  if (!containerEl || !placeholderEls[idx]) return;
-
-  const el = placeholderEls[idx];
-  const containerRect = containerEl.getBoundingClientRect();
-  const elRect = el.getBoundingClientRect();
-
-  if (elRect.top < containerRect.top || elRect.bottom > containerRect.bottom) {
-    el.scrollIntoView({ block: "center", behavior: "smooth" });
+  if (!containerEl || containerHeight === 0) return;
+  const itemTop = idx * ITEM_HEIGHT;
+  const itemBottom = itemTop + ITEM_HEIGHT;
+  const visTop = containerEl.scrollTop;
+  const visBottom = visTop + containerHeight;
+  if (itemTop < visTop || itemBottom > visBottom) {
+    const target = itemTop - containerHeight / 2 + ITEM_HEIGHT / 2;
+    containerEl.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Initialize container dimensions + ResizeObserver
+// ---------------------------------------------------------------------------
+
+let resizeObserver: ResizeObserver | null = null;
+
+$effect(() => {
+  if (!containerEl) return;
+
+  // Set initial values
+  scrollTop = containerEl.scrollTop;
+  containerHeight = containerEl.clientHeight;
+  triggerThumbnailLoads();
+
+  resizeObserver = new ResizeObserver(() => {
+    if (!containerEl) return;
+    containerHeight = containerEl.clientHeight;
+  });
+  resizeObserver.observe(containerEl);
+
+  return () => {
+    resizeObserver?.disconnect();
+    resizeObserver = null;
+  };
 });
 
 // ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------
 
-onMount(() => {
-  requestAnimationFrame(() => setupObserver());
-});
-
 onDestroy(() => {
   destroyed = true;
-  observer?.disconnect();
-  observer = null;
   if (debounceTimer) clearTimeout(debounceTimer);
+  if (scrollRafId) cancelAnimationFrame(scrollRafId);
   batchQueue.length = 0;
   pendingIndices.clear();
 });
@@ -213,19 +218,16 @@ function getThumbnailUrl(index: number): string | null {
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="thumbnail-strip" class:resizing bind:this={containerEl} style:width="{width}px" style:min-width="{width}px">
+<div class="thumbnail-strip" class:resizing bind:this={containerEl} style:width="{width}px" style:min-width="{width}px" onscroll={handleScroll}>
   <div
     class="resize-handle"
-    onpointerdown={onHandlePointerDown}
-    onpointermove={onHandlePointerMove}
-    onpointerup={onHandlePointerUp}
+    use:resizeHandle={{ edge: 'right', min: 80, max: 250, onResize: (w) => onWidthChange?.(w), onResizeStart: () => resizing = true, onResizeEnd: () => resizing = false }}
   ></div>
-  {#each Array(totalPages) as _, i}
+  <div style:height="{topSpacerHeight}px" style:flex-shrink="0"></div>
+  {#each visibleIndices as i (i)}
     <div
       class="thumbnail-slot"
       class:active={i === currentPageIndex}
-      data-index={i}
-      bind:this={placeholderEls[i]}
     >
       <button
         class="thumbnail-inner"
@@ -245,6 +247,7 @@ function getThumbnailUrl(index: number): string | null {
       </button>
     </div>
   {/each}
+  <div style:height="{bottomSpacerHeight}px" style:flex-shrink="0"></div>
 </div>
 
 <style>
@@ -343,6 +346,4 @@ function getThumbnailUrl(index: number): string | null {
   color: var(--color-text-secondary, light-dark(#5c5c5c, #a8a6a3));
   opacity: 0.6;
 }
-
-
 </style>

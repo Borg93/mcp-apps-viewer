@@ -1,4 +1,6 @@
 <script lang="ts">
+import { onDestroy } from "svelte";
+import { LRUCache } from "lru-cache";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { ViewerData, PageData } from "../lib/types";
 import { parsePageResult } from "../lib/utils";
@@ -26,8 +28,9 @@ let showThumbnails = $state(true);
 let currentPageMetadata = $derived(data.pageMetadata[currentPageIndex] ?? "");
 let thumbnailStripWidth = $state(120);
 
-// Client-side page cache (seeded lazily in the page-index effect below)
-let pageCache = new Map<number, PageData>();
+// Client-side page cache with LRU eviction (max 10 entries ≈ 40 MB worst-case)
+let pageCache = new LRUCache<number, PageData>({ max: 10 });
+let inFlight = new Map<number, Promise<PageData | null>>();
 let currentPage = $state<PageData | null>(null);
 
 function handlePageSelect(index: number) {
@@ -61,36 +64,44 @@ function handleKeydown(e: KeyboardEvent) {
 // ---------------------------------------------------------------------------
 
 /** Fetch page ALTO data from server (image loads directly via URL) */
-async function fetchPageData(index: number): Promise<PageData | null> {
-  if (index < 0 || index >= totalPages) return null;
-  if (pageCache.has(index)) return pageCache.get(index)!;
+function fetchPageData(index: number): Promise<PageData | null> {
+  if (index < 0 || index >= totalPages) return Promise.resolve(null);
+  if (pageCache.has(index)) return Promise.resolve(pageCache.get(index)!);
+  if (inFlight.has(index)) return inFlight.get(index)!;
 
-  try {
-    const urls = data.pageUrls[index];
-    const result = await app.callServerTool({
-      name: "load-page",
-      arguments: {
-        image_url: urls.image,
-        alto_url: urls.alto,
-        page_index: index,
-      },
-    });
+  const promise = (async (): Promise<PageData | null> => {
+    try {
+      const urls = data.pageUrls[index];
+      const result = await app.callServerTool({
+        name: "load-page",
+        arguments: {
+          image_url: urls.image,
+          alto_url: urls.alto,
+          page_index: index,
+        },
+      });
 
-    if (result.isError) {
-      const errText = result.content?.map((c: any) => ("text" in c ? c.text : "")).join(" ") ?? "Unknown error";
-      console.error("load-page error:", errText);
-      return null;
+      if (result.isError) {
+        const errText = result.content?.map((c: any) => ("text" in c ? c.text : "")).join(" ") ?? "Unknown error";
+        console.error("load-page error:", errText);
+        return null;
+      }
+
+      const page = parsePageResult(result);
+      if (page) {
+        pageCache.set(index, page);
+        return page;
+      }
+    } catch (e) {
+      console.error("load-page failed:", e);
+    } finally {
+      inFlight.delete(index);
     }
+    return null;
+  })();
 
-    const page = parsePageResult(result);
-    if (page) {
-      pageCache.set(index, page);
-      return page;
-    }
-  } catch (e) {
-    console.error("load-page failed:", e);
-  }
-  return null;
+  inFlight.set(index, promise);
+  return promise;
 }
 
 /** Fetch and set current page — use cache or fetch ALTO via callServerTool */
@@ -126,6 +137,11 @@ function prefetchAdjacentPages(index: number) {
 // ---------------------------------------------------------------------------
 // Watch page index changes
 // ---------------------------------------------------------------------------
+
+onDestroy(() => {
+  pageCache.clear();
+  inFlight.clear();
+});
 
 let lastRenderedIndex = -1;
 $effect(() => {

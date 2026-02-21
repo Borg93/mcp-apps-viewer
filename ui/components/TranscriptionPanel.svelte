@@ -1,5 +1,6 @@
 <script lang="ts">
 import type { TextLine } from "../lib/types";
+import { resizeHandle } from "../lib/resize";
 
 interface Props {
   textLines: TextLine[];
@@ -16,32 +17,6 @@ let { textLines, highlightedLineId, open, width = 280, onWidthChange, onLineHove
 let lineEls: HTMLButtonElement[] = [];
 let containerEl: HTMLDivElement;
 let resizing = $state(false);
-
-// Drag-resize state
-let dragStartX = 0;
-let dragStartWidth = 0;
-
-function onHandlePointerDown(e: PointerEvent) {
-  e.preventDefault();
-  resizing = true;
-  dragStartX = e.clientX;
-  dragStartWidth = width;
-  (e.target as HTMLElement).setPointerCapture(e.pointerId);
-}
-
-function onHandlePointerMove(e: PointerEvent) {
-  if (!resizing) return;
-  // Dragging left = increasing width (handle is on left edge)
-  const delta = dragStartX - e.clientX;
-  const newWidth = Math.max(200, Math.min(500, dragStartWidth + delta));
-  onWidthChange?.(newWidth);
-}
-
-function onHandlePointerUp(e: PointerEvent) {
-  if (!resizing) return;
-  resizing = false;
-  (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-}
 
 // Auto-scroll to highlighted line when changed externally (from canvas hover)
 $effect(() => {
@@ -63,9 +38,7 @@ $effect(() => {
 <div class="panel" class:open class:resizing style:width="{width}px">
   <div
     class="resize-handle"
-    onpointerdown={onHandlePointerDown}
-    onpointermove={onHandlePointerMove}
-    onpointerup={onHandlePointerUp}
+    use:resizeHandle={{ edge: 'left', min: 200, max: 500, onResize: (w) => onWidthChange?.(w), onResizeStart: () => resizing = true, onResizeEnd: () => resizing = false }}
   ></div>
   <div class="panel-lines" bind:this={containerEl}>
     {#each textLines as line, i}

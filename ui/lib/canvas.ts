@@ -59,8 +59,9 @@ export class CanvasController {
   private zoomCenterX = 0;
   private zoomCenterY = 0;
 
-  // Animation frame handle
+  // Animation frame handles
   private rafId = 0;
+  private zoomRafId = 0;
 
   // Visibility-aware rendering (pause when off-screen)
   private isVisible = true;
@@ -157,6 +158,7 @@ export class CanvasController {
     this.visibilityObserver.disconnect();
     if (this.rafId) cancelAnimationFrame(this.rafId);
     if (this.panInertiaId) cancelAnimationFrame(this.panInertiaId);
+    if (this.zoomRafId) cancelAnimationFrame(this.zoomRafId);
     this.zoomAnimating = false;
     this.image = null;
   }
@@ -347,13 +349,14 @@ export class CanvasController {
     if (Math.abs(diff) < 0.001) {
       this.applyZoom(this.targetScale);
       this.zoomAnimating = false;
+      this.zoomRafId = 0;
       return;
     }
 
     const newScale = this.transform.scale + diff * ZOOM_LERP;
     this.applyZoom(newScale);
 
-    requestAnimationFrame(this.animateZoom);
+    this.zoomRafId = requestAnimationFrame(this.animateZoom);
   };
 
   private applyZoom(newScale: number): void {
