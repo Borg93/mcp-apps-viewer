@@ -1,5 +1,5 @@
 """
-Cached HTTP fetchers for document images, thumbnails, and ALTO XML.
+Cached HTTP fetchers for document images, thumbnails, and text layer XML.
 
 All fetch functions use @lru_cache keyed by URL so the same remote resource
 is downloaded at most once per server process, regardless of which tool or
@@ -23,11 +23,11 @@ from src.parser import detect_and_parse
 logger = logging.getLogger(__name__)
 tracer = get_tracer()
 
-_EMPTY_ALTO: dict = {"textLines": [], "pageWidth": 0, "pageHeight": 0}
+_EMPTY_TEXT_LAYER: dict = {"textLines": [], "pageWidth": 0, "pageHeight": 0}
 
 
 def fetch_xml_from_url(url: str) -> str:
-    """Fetch XML (ALTO or PAGE) from a URL."""
+    """Fetch XML (ALTO/PAGE) from a URL and return raw text."""
     logger.debug("Fetching XML: %s", url)
     response = httpx.get(url, timeout=30.0)
     response.raise_for_status()
@@ -69,9 +69,9 @@ def fetch_thumbnail_as_data_url(url: str, max_width: int = 150) -> str:
 
 
 @lru_cache(maxsize=32)
-def fetch_and_parse_alto(url: str) -> dict:
-    """Fetch ALTO/PAGE XML and parse into structured text line data. Cached by URL."""
-    with tracer.start_as_current_span("fetch_alto", attributes={"url": url}):
+def fetch_and_parse_text_layer(url: str) -> dict:
+    """Fetch ALTO/PAGE XML and parse into a text layer dict. Cached by URL."""
+    with tracer.start_as_current_span("fetch_text_layer", attributes={"url": url}):
         xml = fetch_xml_from_url(url)
         data = detect_and_parse(xml)
         return {
@@ -81,8 +81,8 @@ def fetch_and_parse_alto(url: str) -> dict:
         }
 
 
-def build_page_data(index: int, image_url: str, alto_url: str) -> tuple[dict, list[str]]:
-    """Fetch image + ALTO for a single page. Returns (page_dict, errors)."""
+def build_page_data(index: int, image_url: str, text_layer_url: str) -> tuple[dict, list[str]]:
+    """Fetch image + text layer for a single page. Returns (page_dict, errors)."""
     page: dict = {"index": index}
     errors: list[str] = []
 
@@ -93,13 +93,13 @@ def build_page_data(index: int, image_url: str, alto_url: str) -> tuple[dict, li
         errors.append(f"Page {index + 1} image: {e}")
         page["imageDataUrl"] = ""
 
-    if alto_url:
+    if text_layer_url:
         try:
-            page["alto"] = fetch_and_parse_alto(alto_url)
+            page["textLayer"] = fetch_and_parse_text_layer(text_layer_url)
         except Exception as e:
-            logger.error("ALTO fetch failed for page %d: %s", index, e)
-            page["alto"] = _EMPTY_ALTO
+            logger.error("Text layer fetch failed for page %d: %s", index, e)
+            page["textLayer"] = _EMPTY_TEXT_LAYER
     else:
-        page["alto"] = _EMPTY_ALTO
+        page["textLayer"] = _EMPTY_TEXT_LAYER
 
     return page, errors

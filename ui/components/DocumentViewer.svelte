@@ -44,7 +44,7 @@ let polygonColor = $state(POLYGON_DEFAULTS.color);
 let polygonThickness = $state(POLYGON_DEFAULTS.thickness);
 let polygonOpacity = $state(POLYGON_DEFAULTS.opacity);
 
-let textLines = $derived(pageData?.alto?.textLines ?? []);
+let textLines = $derived(pageData?.textLayer?.textLines ?? []);
 let hasTextLines = $derived(textLines.length > 0);
 let currentPolygons = $derived(textLines.length > 0 ? buildPolygonHits(textLines) : []);
 
@@ -142,7 +142,7 @@ function getContextState() {
     pageIndex,
     totalPages,
     pageMetadata,
-    getTextLines: () => pageData?.alto?.textLines ?? [],
+    getTextLines: () => pageData?.textLayer?.textLines ?? [],
   };
 }
 

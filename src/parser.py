@@ -1,7 +1,7 @@
 import logging
 import xml.etree.ElementTree as ET
 
-from src.models import AltoData, TextLine
+from src.models import TextLayer, TextLine
 
 logger = logging.getLogger(__name__)
 
@@ -12,13 +12,13 @@ _NS_ALTO = {"a": "http://www.loc.gov/standards/alto/ns-v4#"}
 _NS_PAGE = {"p": "http://schema.primaresearch.org/PAGE/gts/pagecontent/2019-07-15"}
 
 
-def _build_alto_data(
+def _build_text_layer(
     lines: list[TextLine],
     page_width: int,
     page_height: int,
     format_label: str,
-) -> AltoData:
-    """Filter lines with both polygon and transcription, log skips, return AltoData."""
+) -> TextLayer:
+    """Filter lines with both polygon and transcription, log skips, return TextLayer."""
     valid: list[TextLine] = []
     transcription_lines: list[str] = []
     skipped_no_polygon = 0
@@ -39,7 +39,7 @@ def _build_alto_data(
     if skipped_no_transcription:
         logger.warning("Skipped %d lines with no transcription", skipped_no_transcription)
 
-    return AltoData(
+    return TextLayer(
         text_lines=valid,
         page_width=page_width,
         page_height=page_height,
@@ -72,8 +72,8 @@ def _float(value: str | None) -> float | None:
         return None
 
 
-def parse_alto_xml(xml_string: str) -> AltoData:
-    """Parse ALTO v4 XML into AltoData. Joins word-level Strings per TextLine."""
+def parse_alto_xml(xml_string: str) -> TextLayer:
+    """Parse ALTO v4 XML into a TextLayer. Joins word-level Strings per TextLine."""
     root = ET.fromstring(xml_string)
 
     # Fall back to no-namespace queries if the document lacks xmlns
@@ -113,11 +113,11 @@ def parse_alto_xml(xml_string: str) -> AltoData:
             confidence=confidence,
         ))
 
-    return _build_alto_data(lines, page_width, page_height, "ALTO")
+    return _build_text_layer(lines, page_width, page_height, "ALTO")
 
 
-def parse_page_xml(xml_string: str) -> AltoData:
-    """Parse PAGE XML (PcGts) into AltoData. Computes bounding box from Coords polygon."""
+def parse_page_xml(xml_string: str) -> TextLayer:
+    """Parse PAGE XML (PcGts) into a TextLayer. Computes bounding box from Coords polygon."""
     root = ET.fromstring(xml_string)
 
     ns = _NS_PAGE if root.tag.startswith("{") else {}
@@ -157,10 +157,10 @@ def parse_page_xml(xml_string: str) -> AltoData:
             confidence=confidence,
         ))
 
-    return _build_alto_data(lines, page_width, page_height, "PAGE XML")
+    return _build_text_layer(lines, page_width, page_height, "PAGE XML")
 
 
-def detect_and_parse(xml_string: str) -> AltoData:
+def detect_and_parse(xml_string: str) -> TextLayer:
     """Auto-detect XML format (ALTO vs PAGE) and parse accordingly."""
     if "<PcGts" in xml_string[:500]:
         return parse_page_xml(xml_string)

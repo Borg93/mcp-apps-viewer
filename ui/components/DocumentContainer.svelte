@@ -63,7 +63,7 @@ function handleKeydown(e: KeyboardEvent) {
 // Page fetching + caching
 // ---------------------------------------------------------------------------
 
-/** Fetch page ALTO data from server (image loads directly via URL) */
+/** Fetch page text layer from server (image loads directly via URL) */
 function fetchPageData(index: number): Promise<PageData | null> {
   if (index < 0 || index >= totalPages) return Promise.resolve(null);
   if (pageCache.has(index)) return Promise.resolve(pageCache.get(index)!);
@@ -76,7 +76,7 @@ function fetchPageData(index: number): Promise<PageData | null> {
         name: "load-page",
         arguments: {
           image_url: urls.image,
-          alto_url: urls.alto,
+          text_layer_url: urls.textLayer,
           page_index: index,
         },
       });
@@ -104,7 +104,7 @@ function fetchPageData(index: number): Promise<PageData | null> {
   return promise;
 }
 
-/** Fetch and set current page — use cache or fetch ALTO via callServerTool */
+/** Fetch and set current page — use cache or fetch text layer via callServerTool */
 async function fetchAndRenderPage(index: number) {
   if (index < 0 || index >= totalPages) return;
 
@@ -123,7 +123,7 @@ async function fetchAndRenderPage(index: number) {
   }
 }
 
-/** Prefetch ALTO data for adjacent pages so navigation feels instant */
+/** Prefetch text layer for adjacent pages so navigation feels instant */
 function prefetchAdjacentPages(index: number) {
   const neighbors = [index - 1, index + 1];
   for (const n of neighbors) {

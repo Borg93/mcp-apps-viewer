@@ -13,7 +13,7 @@ export interface TextLine {
   confidence?: number;
 }
 
-export interface PageAltoData {
+export interface PageTextLayer {
   textLines: TextLine[];
   pageWidth: number;
   pageHeight: number;
@@ -22,12 +22,12 @@ export interface PageAltoData {
 export interface PageData {
   index: number;
   imageDataUrl: string;
-  alto: PageAltoData;
+  textLayer: PageTextLayer;
 }
 
 export interface PageUrl {
   image: string;
-  alto: string;
+  textLayer: string;
 }
 
 export interface ThumbnailData {

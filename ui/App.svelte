@@ -108,9 +108,9 @@ onMount(async () => {
   instance.ontoolinput = (params) => {
     const args = params.arguments as Record<string, unknown>;
     const imageUrls = args?.image_urls as string[] | undefined;
-    const altoUrls = args?.alto_urls as string[] | undefined;
+    const textLayerUrls = args?.text_layer_urls as string[] | undefined;
 
-    if (!imageUrls || !altoUrls || imageUrls.length !== altoUrls.length) return;
+    if (!imageUrls || !textLayerUrls || imageUrls.length !== textLayerUrls.length) return;
 
     isStreaming = true;
     const rawMetadata = args?.metadata as string[] | undefined;
@@ -120,11 +120,11 @@ onMount(async () => {
     );
 
     viewerData = {
-      pageUrls: imageUrls.map((image, i) => ({ image, alto: altoUrls[i] })),
+      pageUrls: imageUrls.map((image, i) => ({ image, textLayer: textLayerUrls[i] })),
       pageMetadata,
     };
     error = null;
-    streamingMessage = `Loading ${imageUrls.length} page document...`;
+    streamingMessage = `Loading ${imageUrls.length}-page document...`;
   };
 
   instance.ontoolresult = (result) => {

@@ -12,7 +12,7 @@ class TextLine(BaseModel):
     confidence: float | None = None
 
 
-class AltoData(BaseModel):
+class TextLayer(BaseModel):
     text_lines: list[TextLine]
     page_width: int
     page_height: int
