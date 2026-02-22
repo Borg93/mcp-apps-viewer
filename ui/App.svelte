@@ -21,7 +21,7 @@ let error = $state<string | null>(null);
 let isStreaming = $state(false);
 let streamingMessage = $state("");
 let isFullscreen = $state(false);
-let canFullscreen = $state(false);
+let canFullscreen = $derived(hostContext?.availableDisplayModes?.includes("fullscreen") ?? false);
 
 let hasData = $derived(viewerData && viewerData.pageUrls.length > 0);
 let isCardState = $derived((!hasData && !isStreaming) || !!error || !app);
@@ -40,9 +40,6 @@ $effect(() => {
 $effect(() => {
   if (hostContext?.displayMode !== undefined) {
     isFullscreen = hostContext.displayMode === "fullscreen";
-  }
-  if (hostContext?.availableDisplayModes !== undefined) {
-    canFullscreen = hostContext.availableDisplayModes.includes("fullscreen");
   }
 });
 
@@ -181,7 +178,7 @@ onDestroy(() => {
   {:else if isStreaming && !viewerData}
     <div class="skeleton">
       <div class="skeleton-strip">
-        {#each Array(4) as _}
+        {#each Array(4) as _, i (i)}
           <div class="skeleton-thumb"></div>
         {/each}
       </div>

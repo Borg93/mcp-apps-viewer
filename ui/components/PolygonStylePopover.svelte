@@ -41,7 +41,7 @@ onDestroy(() => {
   <div class="popover-section">
     <span class="popover-label">Color</span>
     <div class="swatches">
-      {#each SWATCHES as swatch}
+      {#each SWATCHES as swatch (swatch)}
         <button
           class="swatch"
           class:selected={color === swatch}

@@ -41,7 +41,7 @@ $effect(() => {
     use:resizeHandle={{ edge: 'left', min: 200, max: 500, onResize: (w) => onWidthChange?.(w), onResizeStart: () => resizing = true, onResizeEnd: () => resizing = false }}
   ></div>
   <div class="panel-lines" bind:this={containerEl}>
-    {#each textLines as line, i}
+    {#each textLines as line, i (line.id)}
       <button
         class="line-item"
         class:highlighted={line.id === highlightedLineId}

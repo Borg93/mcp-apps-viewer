@@ -1,5 +1,6 @@
 <script lang="ts">
 import { onDestroy } from "svelte";
+import { SvelteSet } from "svelte/reactivity";
 import type { App } from "@modelcontextprotocol/ext-apps";
 import type { ViewerData } from "../lib/types";
 import { resizeHandle } from "../lib/resize";
@@ -26,7 +27,7 @@ let totalPages = $derived(data.pageUrls.length);
 let thumbnailCache = new Map<number, string>();
 
 // Tracks which thumbnails have been rendered (triggers reactivity)
-let loadedIndices = $state(new Set<number>());
+let loadedIndices = new SvelteSet<number>();
 
 // Container ref for scrolling
 let containerEl: HTMLDivElement;
@@ -110,8 +111,6 @@ async function fetchBatch(indices: number[]) {
         thumbnailCache.set(thumb.index, thumb.dataUrl);
         loadedIndices.add(thumb.index);
       }
-      // Trigger reactivity
-      loadedIndices = new Set(loadedIndices);
     }
   } catch (e) {
     console.error("load-thumbnails failed:", e);
@@ -225,6 +224,7 @@ function getThumbnailUrl(index: number): string | null {
   ></div>
   <div style:height="{topSpacerHeight}px" style:flex-shrink="0"></div>
   {#each visibleIndices as i (i)}
+    {@const thumbUrl = getThumbnailUrl(i)}
     <div
       class="thumbnail-slot"
       class:active={i === currentPageIndex}
@@ -233,9 +233,9 @@ function getThumbnailUrl(index: number): string | null {
         class="thumbnail-inner"
         onclick={() => onPageSelect(i)}
       >
-        {#if getThumbnailUrl(i)}
+        {#if thumbUrl}
           <img
-            src={getThumbnailUrl(i)}
+            src={thumbUrl}
             alt="Page {i + 1}"
             class="thumbnail-img"
           />
