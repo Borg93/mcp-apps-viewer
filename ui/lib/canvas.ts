@@ -43,10 +43,8 @@ export class CanvasController {
 
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  private container: HTMLElement;
   private callbacks: CanvasCallbacks;
   private image: HTMLImageElement | null = null;
-  private canvasRect: DOMRect;
 
   // Pointer state for pan + click detection
   private pointerDown: { x: number; y: number; tx: number; ty: number } | null = null;
@@ -81,12 +79,9 @@ export class CanvasController {
   ) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d")!;
-    this.container = container;
     this.callbacks = callbacks;
-    this.canvasRect = canvas.getBoundingClientRect();
 
     this.resizeObserver = new ResizeObserver(() => {
-      this.canvasRect = this.canvas.getBoundingClientRect();
       if (this.image) {
         this.fitToCanvas();
         this.draw();
@@ -192,8 +187,9 @@ export class CanvasController {
   };
 
   handlePointerMove = (e: PointerEvent): void => {
-    const cx = e.clientX - this.canvasRect.left;
-    const cy = e.clientY - this.canvasRect.top;
+    const rect = this.canvas.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
 
     if (this.pointerDown) {
       const dx = e.clientX - this.pointerDown.x;
@@ -239,8 +235,9 @@ export class CanvasController {
 
     // Click — delegate to callback
     if (this.callbacks.onClickImage) {
-      const cx = e.clientX - this.canvasRect.left;
-      const cy = e.clientY - this.canvasRect.top;
+      const rect = this.canvas.getBoundingClientRect();
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
       const imgX = (cx - this.transform.x) / this.transform.scale;
       const imgY = (cy - this.transform.y) / this.transform.scale;
       this.callbacks.onClickImage(imgX, imgY);
@@ -253,8 +250,9 @@ export class CanvasController {
 
   handleWheel = (e: WheelEvent): void => {
     e.preventDefault();
-    this.zoomCenterX = e.clientX - this.canvasRect.left;
-    this.zoomCenterY = e.clientY - this.canvasRect.top;
+    const rect = this.canvas.getBoundingClientRect();
+    this.zoomCenterX = e.clientX - rect.left;
+    this.zoomCenterY = e.clientY - rect.top;
 
     // Normalize deltaY across input devices:
     // - Mouse wheel: deltaMode=0 (pixels), large values (~100)

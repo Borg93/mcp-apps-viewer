@@ -336,6 +336,8 @@ function getThumbnailUrl(index: number): string | null {
 
 .thumbnail-img {
   width: 100%;
+  height: 120px;
+  object-fit: contain;
   display: block;
 }
 
