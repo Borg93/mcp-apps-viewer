@@ -56,7 +56,7 @@ onDestroy(() => {
     <span class="popover-label">Thickness</span>
     <input
       type="range"
-      min="1"
+      min="0.5"
       max="5"
       step="0.5"
       value={thickness}
@@ -67,9 +67,9 @@ onDestroy(() => {
     <span class="popover-label">Opacity</span>
     <input
       type="range"
-      min="0.05"
+      min="0.02"
       max="0.5"
-      step="0.05"
+      step="0.02"
       value={opacity}
       oninput={(e) => onChange('opacity', parseFloat((e.target as HTMLInputElement).value))}
     />
