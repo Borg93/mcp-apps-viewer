@@ -45,7 +45,7 @@ _TTL_TEXT_LAYERS = 300
 _inflight: dict[str, asyncio.Task] = {}
 
 
-async def _dedup(key: str, coro) -> any:
+async def _dedup(key: str, coro):  # noqa: ANN001
     """If a fetch for `key` is already in flight, await it instead of starting a new one."""
     if key in _inflight:
         return await _inflight[key]
