@@ -30,6 +30,14 @@ export function drawPolygonOverlays(
 ): void {
   if (polygons.length === 0) return;
 
+  // Pre-compute all RGBA strings once per frame (not per polygon)
+  const fillNormal = hexToRgba(style.color, style.opacity);
+  const fillHover = hexToRgba(style.color, Math.min(1, style.opacity * 2));
+  const strokeNormal = hexToRgba(style.color, Math.min(1, style.opacity * 5));
+  const strokeHover = hexToRgba(style.color, 1);
+  const lineWidthNormal = style.thickness / transform.scale;
+  const lineWidthHover = (style.thickness + 1) / transform.scale;
+
   for (const p of polygons) {
     const isHovered = p.lineId === hoveredLineId;
 
@@ -40,16 +48,10 @@ export function drawPolygonOverlays(
     }
     ctx.closePath();
 
-    ctx.fillStyle = isHovered
-      ? hexToRgba(style.color, Math.min(1, style.opacity * 2))
-      : hexToRgba(style.color, style.opacity);
+    ctx.fillStyle = isHovered ? fillHover : fillNormal;
     ctx.fill();
-    ctx.strokeStyle = isHovered
-      ? hexToRgba(style.color, 1)
-      : hexToRgba(style.color, Math.min(1, style.opacity * 5));
-    ctx.lineWidth = isHovered
-      ? (style.thickness + 1) / transform.scale
-      : style.thickness / transform.scale;
+    ctx.strokeStyle = isHovered ? strokeHover : strokeNormal;
+    ctx.lineWidth = isHovered ? lineWidthHover : lineWidthNormal;
     ctx.stroke();
   }
 }

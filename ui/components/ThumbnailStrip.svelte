@@ -23,7 +23,8 @@ let { app, data, currentPageIndex, onPageSelect, width = 120, onWidthChange }: P
 
 let totalPages = $derived(data.pageUrls.length);
 
-// Cache: page index → thumbnail data URL
+// Cache: page index → thumbnail data URL (capped to limit memory)
+const THUMB_CACHE_MAX = 50;
 let thumbnailCache = new Map<number, string>();
 
 // Tracks which thumbnails have been rendered (triggers reactivity)
@@ -110,6 +111,12 @@ async function fetchBatch(indices: number[]) {
       for (const thumb of thumbnails) {
         thumbnailCache.set(thumb.index, thumb.dataUrl);
         loadedIndices.add(thumb.index);
+      }
+      // Evict oldest entries if cache exceeds limit
+      while (thumbnailCache.size > THUMB_CACHE_MAX) {
+        const oldest = thumbnailCache.keys().next().value!;
+        thumbnailCache.delete(oldest);
+        loadedIndices.delete(oldest);
       }
     }
   } catch (e) {

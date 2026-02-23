@@ -1,6 +1,6 @@
 {
   "name": "document-viewer",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "type": "module",
   "description": "Document Viewer - Interactive ALTO XML visualization",
   "scripts": {
