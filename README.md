@@ -1,7 +1,3 @@
-# Riksarkivet Document Viewer
-
-Interactive document viewer for Swedish National Archives with ALTO XML visualization.
-
 ## Quick Start
 
 ```bash
@@ -41,8 +37,3 @@ make serve
 | `make build` | Build frontend |
 | `make serve` | Run HTTP server (port 3001) |
 | `make serve-stdio` | Run stdio server |
-
-## Usage
-
-Call `view-document` with an image ID (e.g., `A0068523_00007`) to load a document from Riksarkivet.
-# mcp-apps-ra
