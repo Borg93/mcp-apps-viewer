@@ -32,4 +32,4 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import sys" || exit 1
-CMD ["python", "server.py"]
+CMD ["uv","run", "server.py"]
