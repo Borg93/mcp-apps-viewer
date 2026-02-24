@@ -7,8 +7,9 @@ import { CanvasController } from "../lib/canvas";
 import { drawPolygonOverlays } from "../lib/overlays";
 import TranscriptionPanel from "./TranscriptionPanel.svelte";
 import CanvasToolbar from "./CanvasToolbar.svelte";
+import SearchBar from "./SearchBar.svelte";
 import { scheduleContextUpdate, resetContextState } from "../lib/context";
-import { POLYGON_DEFAULTS } from "../lib/constants";
+import { POLYGON_DEFAULTS, HIGHLIGHT_DEFAULTS } from "../lib/constants";
 
 interface Props {
   app: App;
@@ -24,9 +25,16 @@ interface Props {
   onToggleThumbnails: () => void;
   onPrevPage: () => void;
   onNextPage: () => void;
+  highlightTerm?: string;
+  highlightTermColor?: string;
+  pageMatchCounts?: Map<number, number>;
+  globalTotalMatches?: number;
+  globalSearchLoading?: boolean;
+  onGlobalSearch?: (term: string) => void;
+  onGlobalNavigate?: (direction: "prev" | "next") => void;
 }
 
-let { app, pageData, pageIndex, totalPages, pageMetadata, canFullscreen, isFullscreen, onToggleFullscreen, hasThumbnails, showThumbnails, onToggleThumbnails, onPrevPage, onNextPage }: Props = $props();
+let { app, pageData, pageIndex, totalPages, pageMetadata, canFullscreen, isFullscreen, onToggleFullscreen, hasThumbnails, showThumbnails, onToggleThumbnails, onPrevPage, onNextPage, highlightTerm = "", highlightTermColor = HIGHLIGHT_DEFAULTS.color, pageMatchCounts, globalTotalMatches = 0, globalSearchLoading = false, onGlobalSearch, onGlobalNavigate }: Props = $props();
 
 let showNavButtons = $derived(!showThumbnails || !hasThumbnails);
 
@@ -44,9 +52,31 @@ let polygonColor = $state(POLYGON_DEFAULTS.color);
 let polygonThickness = $state(POLYGON_DEFAULTS.thickness);
 let polygonOpacity = $state(POLYGON_DEFAULTS.opacity);
 
+// Search state
+let searchTerm = $state("");
+let showSearch = $state(false);
+let showHighlights = $state(true);
+let activeMatchIndex = $state(0);
+
 let textLines = $derived(pageData?.textLayer?.textLines ?? []);
 let hasTextLines = $derived(textLines.length > 0);
 let currentPolygons = $derived(textLines.length > 0 ? buildPolygonHits(textLines) : []);
+
+// Search-derived values
+let searchMatches = $derived.by(() => {
+  if (!searchTerm || !showHighlights) return [];
+  const term = searchTerm.toLowerCase();
+  return textLines.filter(l => l.transcription.toLowerCase().includes(term));
+});
+let searchMatchPolygons = $derived(searchMatches.length > 0 ? buildPolygonHits(searchMatches) : []);
+let searchMatchIdSet = $derived(new Set(searchMatches.map(l => l.id)));
+
+// Highlight polygon style (uses server-provided color or default)
+let highlightStyle = $derived({
+  color: highlightTermColor || HIGHLIGHT_DEFAULTS.color,
+  thickness: HIGHLIGHT_DEFAULTS.thickness,
+  opacity: HIGHLIGHT_DEFAULTS.opacity,
+});
 
 // Canvas element refs
 let canvasEl: HTMLCanvasElement;
@@ -56,16 +86,35 @@ let wrapperEl: HTMLDivElement;
 let controller: CanvasController;
 
 // ---------------------------------------------------------------------------
+// Init: open search bar if highlightTerm was provided
+// ---------------------------------------------------------------------------
+
+let highlightTermInitDone = false;
+$effect(() => {
+  if (highlightTerm && !highlightTermInitDone) {
+    highlightTermInitDone = true;
+    searchTerm = highlightTerm;
+    showSearch = true;
+    onGlobalSearch?.(highlightTerm);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // CanvasController callbacks
 // ---------------------------------------------------------------------------
 
 /** Draw polygon overlays in image space (called by CanvasController after drawing the image) */
 function drawOverlays(ctx: CanvasRenderingContext2D, transform: import("../lib/canvas").Transform) {
+  // Pass 1: base polygons (user-styled)
   drawPolygonOverlays(
     ctx, transform, currentPolygons,
     { color: polygonColor, thickness: polygonThickness, opacity: polygonOpacity },
     highlightedLineId,
   );
+  // Pass 2: search match highlights ON TOP (amber, thicker, higher opacity)
+  if (searchMatchPolygons.length > 0 && showHighlights) {
+    drawPolygonOverlays(ctx, transform, searchMatchPolygons, highlightStyle, highlightedLineId);
+  }
 }
 
 /** Handle hover — hit test polygons, set tooltip + highlight, return cursor */
@@ -133,6 +182,70 @@ function handlePanelLineClick(line: TextLine) {
 }
 
 // ---------------------------------------------------------------------------
+// Search navigation
+// ---------------------------------------------------------------------------
+
+function goToMatch(index: number) {
+  if (searchMatches.length === 0) {
+    // No matches on this page — navigate cross-page if available
+    if (onGlobalNavigate) {
+      onGlobalNavigate(index >= 0 ? "next" : "prev");
+    }
+    return;
+  }
+
+  // Cross-page navigation: past last match → next page, before first → prev page
+  if (index >= searchMatches.length && onGlobalNavigate) {
+    onGlobalNavigate("next");
+    return;
+  }
+  if (index < 0 && onGlobalNavigate) {
+    onGlobalNavigate("prev");
+    return;
+  }
+
+  const wrappedIndex = ((index % searchMatches.length) + searchMatches.length) % searchMatches.length;
+  activeMatchIndex = wrappedIndex;
+  const match = searchMatches[wrappedIndex];
+  highlightedLineId = match.id;
+  const centerX = match.hpos + match.width / 2;
+  const centerY = match.vpos + match.height / 2;
+  if (!controller?.isPointVisible(centerX, centerY)) {
+    controller?.centerOn(centerX, centerY);
+  }
+  controller?.requestDraw();
+}
+
+function handleSearchTermChange(term: string) {
+  searchTerm = term;
+  activeMatchIndex = 0;
+  onGlobalSearch?.(term);
+}
+
+function handleCloseSearch() {
+  showSearch = false;
+  searchTerm = "";
+  activeMatchIndex = 0;
+  onGlobalSearch?.("");
+  controller?.requestDraw();
+}
+
+function handleViewerKeydown(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+    if (hasTextLines) {
+      e.preventDefault();
+      showSearch = !showSearch;
+      if (!showSearch) {
+        searchTerm = "";
+        activeMatchIndex = 0;
+        onGlobalSearch?.("");
+        controller?.requestDraw();
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Model context helpers
 // ---------------------------------------------------------------------------
 
@@ -143,6 +256,8 @@ function getContextState() {
     totalPages,
     pageMetadata,
     getTextLines: () => pageData?.textLayer?.textLines ?? [],
+    searchTerm: searchTerm || undefined,
+    searchMatchCount: searchMatches.length || undefined,
   };
 }
 
@@ -151,8 +266,9 @@ function getContextState() {
 // ---------------------------------------------------------------------------
 
 $effect(() => {
-  // Subscribe to all three style values
+  // Subscribe to all three style values + search state
   polygonColor; polygonThickness; polygonOpacity;
+  searchMatchPolygons; showHighlights;
   controller?.requestDraw();
 });
 
@@ -217,7 +333,7 @@ onDestroy(() => {
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="viewer-wrapper" bind:this={wrapperEl}>
+<div class="viewer-wrapper" bind:this={wrapperEl} onkeydown={handleViewerKeydown}>
   <!-- Canvas -->
   <div class="canvas-container" bind:this={containerEl}>
     <canvas
@@ -246,6 +362,21 @@ onDestroy(() => {
       {/if}
     </div>
 
+    {#if showSearch}
+      <SearchBar
+        {searchTerm}
+        matchCount={searchMatches.length}
+        {activeMatchIndex}
+        rightOffset={showPanel ? panelWidth : 0}
+        onSearchTermChange={handleSearchTermChange}
+        onPrevMatch={() => goToMatch(activeMatchIndex - 1)}
+        onNextMatch={() => goToMatch(activeMatchIndex + 1)}
+        onClose={handleCloseSearch}
+        {globalTotalMatches}
+        {globalSearchLoading}
+      />
+    {/if}
+
     <CanvasToolbar
       showTranscription={showPanel}
       hasTranscription={hasTextLines}
@@ -266,6 +397,16 @@ onDestroy(() => {
         else if (key === 'thickness') polygonThickness = value as number;
         else if (key === 'opacity') polygonOpacity = value as number;
       }}
+      onToggleSearch={() => {
+        showSearch = !showSearch;
+        if (!showSearch) {
+          searchTerm = "";
+          activeMatchIndex = 0;
+          controller?.requestDraw();
+        }
+      }}
+      {showHighlights}
+      onToggleHighlights={(v) => { showHighlights = v; }}
     />
 
     {#if hasTextLines}
@@ -277,6 +418,7 @@ onDestroy(() => {
         onWidthChange={(w) => panelWidth = w}
         onLineHover={handlePanelLineHover}
         onLineClick={handlePanelLineClick}
+        searchMatchIds={searchMatchIdSet}
       />
     {/if}
   </div>

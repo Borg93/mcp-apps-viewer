@@ -7,10 +7,10 @@ from pathlib import Path
 import httpx
 import pytest
 import respx
-from key_value.aio.stores.memory import MemoryStore
-
 import src.fetchers as _fetchers_mod
+from key_value.aio.stores.memory import MemoryStore
 from src.fetchers import fetch_thumbnail_as_data_url
+
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
@@ -81,6 +81,4 @@ async def test_concurrent_thumbnail_fetches(respx_mock, jpeg_bytes):
 
     # Concurrent time should be well under 8x sequential time
     sequential_estimate = delay * 8
-    assert concurrent_time < sequential_estimate * 0.6, (
-        f"Concurrent took {concurrent_time:.3f}s, sequential estimate {sequential_estimate:.3f}s"
-    )
+    assert concurrent_time < sequential_estimate * 0.6, f"Concurrent took {concurrent_time:.3f}s, sequential estimate {sequential_estimate:.3f}s"

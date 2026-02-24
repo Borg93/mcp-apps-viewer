@@ -1,7 +1,7 @@
 [project]
-name = "riksarkivet-viewer"
+name = "mcp-viewer"
 version = "0.1.0"
-description = "Riksarkivet Document Viewer - Interactive ALTO XML visualization"
+description = "Document Viewer - Interactive ALTO XML visualization"
 requires-python = ">=3.13"
 dependencies = [
     "httpx[http2]>=0.28.0",
@@ -11,7 +11,7 @@ dependencies = [
 ]
 
 [project.scripts]
-riksarkivet-viewer = "server:main"
+mcp-viewer = "server:main"
 
 [build-system]
 requires = ["hatchling"]

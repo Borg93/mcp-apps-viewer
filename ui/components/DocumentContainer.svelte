@@ -28,6 +28,13 @@ let showThumbnails = $state(true);
 let currentPageMetadata = $derived(data.pageMetadata[currentPageIndex] ?? "");
 let thumbnailStripWidth = $state(120);
 
+// Cross-page search state
+let pageMatchCounts = $state<Map<number, number>>(new Map());
+let globalTotalMatches = $state(0);
+let globalSearchLoading = $state(false);
+let globalSearchTerm = $state("");
+let globalSearchDebounce: ReturnType<typeof setTimeout> | null = null;
+
 // Client-side page cache with LRU eviction (max 10 entries ≈ 40 MB worst-case)
 let pageCache = new LRUCache<number, PageData>({ max: 10 });
 let inFlight = new Map<number, Promise<PageData | null>>();
@@ -60,6 +67,73 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 // ---------------------------------------------------------------------------
+// Cross-page search
+// ---------------------------------------------------------------------------
+
+function handleGlobalSearch(term: string) {
+  if (globalSearchDebounce) clearTimeout(globalSearchDebounce);
+  globalSearchTerm = term;
+
+  if (!term || !term.trim()) {
+    pageMatchCounts = new Map();
+    globalTotalMatches = 0;
+    globalSearchLoading = false;
+    return;
+  }
+
+  globalSearchLoading = true;
+  globalSearchDebounce = setTimeout(async () => {
+    try {
+      const result = await app.callServerTool({
+        name: "search_all_pages",
+        arguments: {
+          text_layer_urls: data.pageUrls.map(u => u.textLayer),
+          term: term.trim(),
+        },
+      });
+
+      // Only apply if the term hasn't changed while we were fetching
+      if (globalSearchTerm !== term) return;
+
+      if (!result.isError) {
+        const sc = (result as any).structuredContent;
+        if (sc) {
+          const newCounts = new Map<number, number>();
+          for (const m of sc.pageMatches ?? []) {
+            newCounts.set(m.pageIndex, m.matchCount);
+          }
+          pageMatchCounts = newCounts;
+          globalTotalMatches = sc.totalMatches ?? 0;
+        }
+      }
+    } catch (e) {
+      console.error("search_all_pages failed:", e);
+    } finally {
+      if (globalSearchTerm === term) {
+        globalSearchLoading = false;
+      }
+    }
+  }, 500);
+}
+
+function handleGlobalNavigate(direction: "prev" | "next") {
+  const pagesWithMatches = Array.from(pageMatchCounts.keys()).sort((a, b) => a - b);
+  if (pagesWithMatches.length === 0) return;
+
+  // Filter out current page — we want to navigate *away*
+  const otherPages = pagesWithMatches.filter(p => p !== currentPageIndex);
+  if (otherPages.length === 0) return; // Only matches on current page
+
+  if (direction === "next") {
+    const next = otherPages.find(p => p > currentPageIndex);
+    currentPageIndex = next !== undefined ? next : otherPages[0];
+  } else {
+    const prev = [...otherPages].reverse().find(p => p < currentPageIndex);
+    currentPageIndex = prev !== undefined ? prev : otherPages[otherPages.length - 1];
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Page fetching + caching
 // ---------------------------------------------------------------------------
 
@@ -73,7 +147,7 @@ function fetchPageData(index: number): Promise<PageData | null> {
     try {
       const urls = data.pageUrls[index];
       const result = await app.callServerTool({
-        name: "load-page",
+        name: "load_page",
         arguments: {
           image_url: urls.image,
           text_layer_url: urls.textLayer,
@@ -83,7 +157,7 @@ function fetchPageData(index: number): Promise<PageData | null> {
 
       if (result.isError) {
         const errText = result.content?.map((c: any) => ("text" in c ? c.text : "")).join(" ") ?? "Unknown error";
-        console.error("load-page error:", errText);
+        console.error("load_page error:", errText);
         return null;
       }
 
@@ -93,7 +167,7 @@ function fetchPageData(index: number): Promise<PageData | null> {
         return page;
       }
     } catch (e) {
-      console.error("load-page failed:", e);
+      console.error("load_page failed:", e);
     } finally {
       inFlight.delete(index);
     }
@@ -141,6 +215,7 @@ function prefetchAdjacentPages(index: number) {
 onDestroy(() => {
   pageCache.clear();
   inFlight.clear();
+  if (globalSearchDebounce) clearTimeout(globalSearchDebounce);
 });
 
 let lastRenderedIndex = -1;
@@ -164,6 +239,7 @@ $effect(() => {
         onPageSelect={handlePageSelect}
         width={thumbnailStripWidth}
         onWidthChange={(w) => thumbnailStripWidth = w}
+        {pageMatchCounts}
       />
     </div>
   {/if}
@@ -182,6 +258,13 @@ $effect(() => {
       onToggleThumbnails={() => showThumbnails = !showThumbnails}
       onPrevPage={handlePrevPage}
       onNextPage={handleNextPage}
+      highlightTerm={data.highlightTerm}
+      highlightTermColor={data.highlightTermColor}
+      {pageMatchCounts}
+      {globalTotalMatches}
+      {globalSearchLoading}
+      onGlobalSearch={handleGlobalSearch}
+      onGlobalNavigate={handleGlobalNavigate}
     />
   {:else}
     <div class="page-loading">

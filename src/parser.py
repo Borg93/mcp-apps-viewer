@@ -3,6 +3,7 @@ import xml.etree.ElementTree as ET
 
 from src.models import TextLayer, TextLine
 
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_PAGE_WIDTH = 6192
@@ -45,6 +46,27 @@ def _build_text_layer(
         page_height=page_height,
         full_text="\n".join(transcription_lines),
     )
+
+
+_BASELINE_ASCENT = 40  # pixels above baseline for polygon strip
+_BASELINE_DESCENT = 15  # pixels below baseline for polygon strip
+
+
+def _polygon_from_baseline(baseline: str, ascent: int = _BASELINE_ASCENT, descent: int = _BASELINE_DESCENT) -> str:
+    """Create a polygon strip from a BASELINE attribute.
+
+    Offsets each baseline point up by *ascent* and down by *descent* to form
+    a band that tightly wraps the text line.
+    """
+    try:
+        points = [(int(x), int(y)) for x, y in (p.split(",") for p in baseline.split())]
+        if len(points) < 2:
+            return ""
+        top = [f"{x},{max(0, y - ascent)}" for x, y in points]
+        bottom = [f"{x},{y + descent}" for x, y in reversed(points)]
+        return " ".join(top + bottom)
+    except (ValueError, IndexError):
+        return ""
 
 
 def _bbox_from_polygon(polygon: str) -> tuple[int, int, int, int]:
@@ -93,6 +115,16 @@ def parse_alto_xml(xml_string: str) -> TextLayer:
         polygon_el = tl.find(f"{prefix}Shape/{prefix}Polygon", ns)
         polygon = polygon_el.get("POINTS", "") if polygon_el is not None else ""
 
+        # Transkribus ALTO: no Shape/Polygon — prefer BASELINE over bbox
+        if not polygon:
+            baseline = tl.get("BASELINE", "")
+            if baseline:
+                polygon = _polygon_from_baseline(baseline)
+            else:
+                h, v, w, ht = _int(tl.get("HPOS")), _int(tl.get("VPOS")), _int(tl.get("WIDTH")), _int(tl.get("HEIGHT"))
+                if w and ht:
+                    polygon = f"{h},{v} {h + w},{v} {h + w},{v + ht} {h},{v + ht}"
+
         strings = tl.findall(f"{prefix}String", ns)
         words = [s.get("CONTENT", "") for s in strings]
         transcription = " ".join(w for w in words if w)
@@ -102,16 +134,18 @@ def parse_alto_xml(xml_string: str) -> TextLayer:
         if wc_valid:
             confidence = sum(wc_valid) / len(wc_valid)
 
-        lines.append(TextLine(
-            id=tl.get("ID", ""),
-            polygon=polygon,
-            transcription=transcription,
-            hpos=_int(tl.get("HPOS")),
-            vpos=_int(tl.get("VPOS")),
-            width=_int(tl.get("WIDTH")),
-            height=_int(tl.get("HEIGHT")),
-            confidence=confidence,
-        ))
+        lines.append(
+            TextLine(
+                id=tl.get("ID", ""),
+                polygon=polygon,
+                transcription=transcription,
+                hpos=_int(tl.get("HPOS")),
+                vpos=_int(tl.get("VPOS")),
+                width=_int(tl.get("WIDTH")),
+                height=_int(tl.get("HEIGHT")),
+                confidence=confidence,
+            )
+        )
 
     return _build_text_layer(lines, page_width, page_height, "ALTO")
 
@@ -146,16 +180,18 @@ def parse_page_xml(xml_string: str) -> TextLayer:
 
         hpos, vpos, width, height = _bbox_from_polygon(polygon) if polygon else (0, 0, 0, 0)
 
-        lines.append(TextLine(
-            id=tl.get("id", ""),
-            polygon=polygon,
-            transcription=transcription,
-            hpos=hpos,
-            vpos=vpos,
-            width=width,
-            height=height,
-            confidence=confidence,
-        ))
+        lines.append(
+            TextLine(
+                id=tl.get("id", ""),
+                polygon=polygon,
+                transcription=transcription,
+                hpos=hpos,
+                vpos=vpos,
+                width=width,
+                height=height,
+                confidence=confidence,
+            )
+        )
 
     return _build_text_layer(lines, page_width, page_height, "PAGE XML")
 

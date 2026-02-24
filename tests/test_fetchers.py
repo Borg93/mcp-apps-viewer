@@ -6,9 +6,8 @@ from pathlib import Path
 import httpx
 import pytest
 import respx
-from key_value.aio.stores.memory import MemoryStore
-
 import src.fetchers as _fetchers_mod
+from key_value.aio.stores.memory import MemoryStore
 from src.fetchers import (
     _http,
     build_page_data,
@@ -16,6 +15,7 @@ from src.fetchers import (
     fetch_image_as_data_url,
     fetch_thumbnail_as_data_url,
 )
+
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
@@ -45,9 +45,7 @@ def alto_xml_text() -> str:
 @respx.mock(assert_all_called=False)
 async def test_fetch_image_returns_data_url(respx_mock, jpeg_bytes):
     url = "https://example.com/image.jpg"
-    respx_mock.get(url).mock(
-        return_value=httpx.Response(200, content=jpeg_bytes, headers={"content-type": "image/jpeg"})
-    )
+    respx_mock.get(url).mock(return_value=httpx.Response(200, content=jpeg_bytes, headers={"content-type": "image/jpeg"}))
 
     result = await fetch_image_as_data_url(url)
 
@@ -59,9 +57,7 @@ async def test_fetch_image_returns_data_url(respx_mock, jpeg_bytes):
 @respx.mock(assert_all_called=False)
 async def test_fetch_image_cache_hit(respx_mock, jpeg_bytes):
     url = "https://example.com/cached-image.jpg"
-    respx_mock.get(url).mock(
-        return_value=httpx.Response(200, content=jpeg_bytes, headers={"content-type": "image/jpeg"})
-    )
+    respx_mock.get(url).mock(return_value=httpx.Response(200, content=jpeg_bytes, headers={"content-type": "image/jpeg"}))
 
     first = await fetch_image_as_data_url(url)
     second = await fetch_image_as_data_url(url)
@@ -77,9 +73,7 @@ async def test_fetch_image_cache_hit(respx_mock, jpeg_bytes):
 @respx.mock(assert_all_called=False)
 async def test_fetch_thumbnail_resizes_and_caches(respx_mock, jpeg_bytes):
     url = "https://example.com/thumb.jpg"
-    respx_mock.get(url).mock(
-        return_value=httpx.Response(200, content=jpeg_bytes, headers={"content-type": "image/jpeg"})
-    )
+    respx_mock.get(url).mock(return_value=httpx.Response(200, content=jpeg_bytes, headers={"content-type": "image/jpeg"}))
 
     result = await fetch_thumbnail_as_data_url(url)
 
@@ -100,9 +94,7 @@ async def test_fetch_thumbnail_resizes_and_caches(respx_mock, jpeg_bytes):
 @respx.mock(assert_all_called=False)
 async def test_fetch_text_layer_parses_alto(respx_mock, alto_xml_text):
     url = "https://example.com/alto.xml"
-    respx_mock.get(url).mock(
-        return_value=httpx.Response(200, text=alto_xml_text, headers={"content-type": "application/xml"})
-    )
+    respx_mock.get(url).mock(return_value=httpx.Response(200, text=alto_xml_text, headers={"content-type": "application/xml"}))
 
     result = await fetch_and_parse_text_layer(url)
 
@@ -147,12 +139,8 @@ async def test_cache_ttl_expiry():
 async def test_build_page_data(respx_mock, jpeg_bytes, alto_xml_text):
     img_url = "https://example.com/page.jpg"
     xml_url = "https://example.com/page.xml"
-    respx_mock.get(img_url).mock(
-        return_value=httpx.Response(200, content=jpeg_bytes, headers={"content-type": "image/jpeg"})
-    )
-    respx_mock.get(xml_url).mock(
-        return_value=httpx.Response(200, text=alto_xml_text, headers={"content-type": "application/xml"})
-    )
+    respx_mock.get(img_url).mock(return_value=httpx.Response(200, content=jpeg_bytes, headers={"content-type": "image/jpeg"}))
+    respx_mock.get(xml_url).mock(return_value=httpx.Response(200, text=alto_xml_text, headers={"content-type": "application/xml"}))
 
     page, errors = await build_page_data(0, img_url, xml_url)
 
@@ -167,9 +155,7 @@ async def test_build_page_data(respx_mock, jpeg_bytes, alto_xml_text):
 @respx.mock(assert_all_called=False)
 async def test_build_page_data_empty_text_layer(respx_mock, jpeg_bytes):
     img_url = "https://example.com/page-no-text.jpg"
-    respx_mock.get(img_url).mock(
-        return_value=httpx.Response(200, content=jpeg_bytes, headers={"content-type": "image/jpeg"})
-    )
+    respx_mock.get(img_url).mock(return_value=httpx.Response(200, content=jpeg_bytes, headers={"content-type": "image/jpeg"}))
 
     page, errors = await build_page_data(0, img_url, "")
 
