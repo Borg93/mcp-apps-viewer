@@ -1,5 +1,5 @@
 {
-  "name": "mcp-apps-ra",
+  "name": "mcp-apps-viewer",
   "engineVersion": "v0.18.19",
   "sdk": {
     "source": "go"
