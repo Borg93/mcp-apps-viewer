@@ -6,13 +6,12 @@ import (
 	"dagger/mcp-apps-ra/internal/dagger"
 )
 
-// McpAppsRa provides CI/CD pipeline functions for the MCP Apps RA project
 type McpAppsRa struct{}
 
 // Default configuration constants
 const (
 	DefaultRegistry  = "docker.io"
-	DefaultImageRepo = "riksarkivet/mcp-apps-ra"
+	DefaultImageRepo = "borg93/mcp-apps-viewer"
 	DefaultPort      = 3001
 )
 
