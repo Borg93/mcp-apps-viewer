@@ -1,6 +1,4 @@
 /**
- * Svelte action for drag-resize handles.
- *
  * Attaches pointer events to the element and computes width deltas
  * based on which edge the handle sits on.
  */
