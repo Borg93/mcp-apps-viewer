@@ -1,5 +1,5 @@
 /**
- * Polygon overlay drawing — pure functions, no Svelte dependencies.
+ * Polygon overlay drawing.
  */
 
 import type { PolygonHit } from "./geometry";
