@@ -1,10 +1,8 @@
 /**
  * CanvasController — reusable pan/zoom/transform/draw infrastructure.
- *
  * Owns: transform state, pointer handling (pan + inertia), smooth zoom,
  * ResizeObserver, IntersectionObserver (visibility-aware rendering), RAF scheduling.
  *
- * Domain-specific rendering (e.g. ALTO polygon overlays) is delegated via callbacks.
  */
 
 export interface Transform {
